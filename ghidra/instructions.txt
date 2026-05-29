@@ -1,0 +1,119 @@
+================================================================
+GHIDRA SETUP — ApeEscapeRecomp
+================================================================
+
+Goal: import the Ape Escape (USA) boot executable into Ghidra so
+functions, labels and structs can feed ../seeds/ and ../annotations/.
+
+Game:    Ape Escape (USA)
+Serial:  SCUS-94423
+Region:  North America (NTSC-U)
+
+----------------------------------------------------------------
+CPU / processor
+----------------------------------------------------------------
+The PlayStation CPU is a MIPS R3000A (LSI CW33300 core):
+  - 32-bit, LITTLE-ENDIAN, MIPS I integer ISA
+  - No hardware FPU. Coprocessors are COP0 (system control) and
+    COP2 (the GTE geometry transform engine). Ghidra's default MIPS
+    decoder handles the integer ISA fine; GTE (cop2) ops show up as
+    coprocessor instructions — that is expected, not an error.
+
+  Ghidra language:  MIPS:LE:32:default
+  Compiler spec:    default
+  Endianness:       little
+  Address size:     32-bit
+
+----------------------------------------------------------------
+What to import
+----------------------------------------------------------------
+Import the HEADERLESS dump (the 2048-byte PS-EXE header is already
+stripped, so file offset 0 maps cleanly to the load address):
+
+  ghidra\SCUS_944.23_no_header.bin
+
+(Alternatively you can import the header-ful boot EXE
+ apeescape\SCUS_944.23 and set the import "File Offset" to 0x800.
+ The headerless dump is simpler and is what these notes assume.)
+
+----------------------------------------------------------------
+Load / memory layout (read from the PS-EXE header)
+----------------------------------------------------------------
+  Load address (base):  0x80010000   <-- file offset 0 maps here
+  Entry point (pc0):    0x800A3660
+  Initial $gp:          0x800BCC60
+  Text size:            0x000A5000    (675,840 bytes)
+  End of text:          0x800B5000    (load_address + text_size)
+  Initial $sp (stack):  0x801FFFF0
+
+PS1 address space, for context:
+  0x80000000-0x801FFFFF  KSEG0  cached; the 2 MB main RAM
+  0xA0000000-0xA01FFFFF  KSEG1  uncached mirror of the same RAM
+  0xBFC00000             BIOS ROM reset vector
+The boot EXE loads contiguously at 0x80010000 — no bank switching
+or overlays in this image. (Any code overlays are streamed from the
+disc at runtime and are out of scope for the static EXE.)
+
+----------------------------------------------------------------
+Project creation
+----------------------------------------------------------------
+1. Launch Ghidra. File -> New Project -> Non-Shared Project.
+2. Name:     ApeEscapeRecomp
+   Location: F:\Projects\psxrecomp\ApeEscapeRecomp\ghidra\projects\
+   (the projects\ subdir is gitignored — Ghidra writes large,
+    machine-specific .gpr/.lock/.rep files there.)
+
+----------------------------------------------------------------
+Import steps
+----------------------------------------------------------------
+1. File -> Import File -> select  ghidra\SCUS_944.23_no_header.bin
+2. In the import dialog:
+     Format:    Raw Binary
+     Language:  click "..." , filter MIPS, pick  MIPS:LE:32:default
+     Options... -> Base Address:  0x80010000
+3. OK. Accept the auto-analysis defaults, and additionally ENABLE:
+     - "MIPS Constant Reference Analyzer"  (resolves lui/addiu and
+       $gp-relative address pairs — important on MIPS).
+   If the analyzer asks for a register value, set  gp = 0x800BCC60.
+4. Go to the entry point:  G -> 0x800A3660 , then Disassemble /
+   Create Function if it is not already a function. That address is
+   the recompiler's entry_pc.
+
+----------------------------------------------------------------
+Feeding results back into the project
+----------------------------------------------------------------
+- Function starts you want the recompiler to seed: add their
+  addresses (one 0x-prefixed hex per line) to
+  ..\seeds\ghidra_funcs.txt
+- Notes on what a function does: add an  "0xADDRESS, note"  row to
+  ..\annotations\SCUS_944.23_annotations.csv  — the recompiler emits
+  these as comments above the matching function in the generated C.
+
+----------------------------------------------------------------
+Ghidra MCP server (optional, for Claude)
+----------------------------------------------------------------
+Run the GhidrAssistMCP plugin inside Ghidra
+(Window -> GhidrAssistMCP) on a port, then copy
+.mcp.json.example -> .mcp.json . The example uses SSE on
+http://localhost:8090/sse  (server name "ghidra_apeescape").
+
+----------------------------------------------------------------
+Version control
+----------------------------------------------------------------
+Tracked under ghidra/ :
+  - instructions.txt   (this file)
+  - scripts/           (Ghidra Python scripts, as workflows emerge)
+  - annotations/       (exported labels/comments, hand-curated)
+
+NOT tracked (gitignored / machine-specific):
+  - ghidra/projects/   (live Ghidra database)
+  - *.gpr  *.rep/  *.lock
+  - SCUS_944.23_no_header.bin   (derivative of copyrighted code;
+    *.bin is gitignored — see "Regenerating" below)
+
+----------------------------------------------------------------
+Regenerating the headerless dump
+----------------------------------------------------------------
+If the dump is missing, recreate it from the boot EXE (PowerShell):
+  $b = [IO.File]::ReadAllBytes("apeescape\SCUS_944.23")
+  [IO.File]::WriteAllBytes("ghidra\SCUS_944.23_no_header.bin", $b[2048..($b.Length-1)])

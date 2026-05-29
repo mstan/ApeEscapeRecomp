@@ -1,0 +1,4 @@
+# address, note
+# Human-readable notes on function purpose, emitted as [NOTE] comments above
+# the matching function in the generated C. address = 0x-prefixed KSEG0 PC.
+# Note text may contain commas. Add rows as functions are identified in Ghidra.
