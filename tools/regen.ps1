@@ -1,12 +1,23 @@
+param(
+    [string]$PSXRECOMP_ROOT = $env:PSXRECOMP_ROOT
+)
 $ErrorActionPreference = 'Stop'
 
 $Root      = Split-Path -Parent $PSScriptRoot
-$Framework = Join-Path $Root 'psxrecomp-v4'
-$Tool      = Join-Path $Framework 'recompiler/build/psxrecomp-game.exe'
+if ([string]::IsNullOrWhiteSpace($PSXRECOMP_ROOT)) {
+    $PSXRECOMP_ROOT = Join-Path $Root 'psxrecomp-v4'
+}
+$Framework = (Resolve-Path $PSXRECOMP_ROOT).Path
 $Config    = Join-Path $Root 'game.toml'
+$ToolCandidates = @(
+    (Join-Path $Framework 'recompiler/build/psxrecomp-game.exe'),
+    (Join-Path $Framework 'recompiler/build-codex3/psxrecomp-game.exe'),
+    (Join-Path $Framework 'recompiler/build-codex/psxrecomp-game.exe')
+)
+$Tool = $ToolCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if (!(Test-Path $Tool)) {
-    throw "psxrecomp-game not built: $Tool"
+if (!$Tool) {
+    throw "psxrecomp-game not built under $Framework/recompiler"
 }
 if (!(Test-Path $Config)) {
     throw "game.toml not found: $Config"

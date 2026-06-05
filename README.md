@@ -29,13 +29,13 @@ the next phase.
 | `annotations/` | CSV of human notes emitted as comments in the generated C. |
 | `ghidra/` | Headerless dump + `instructions.txt` for reverse engineering. |
 | `generated/` | Recompiled C (local; produced by `tools/regen.ps1`). |
-| `psxrecomp-v4` | Junction to the shared framework (version pinned in `psxrecomp-v4.pin`). |
+| `psxrecomp-v4` | Default junction to the shared framework. Override with `PSXRECOMP_ROOT` or CMake `-DPSXRECOMP_ROOT=...` for isolated worktrees. |
 
 ## Build (from source)
 
 ```
-pwsh tools/regen.ps1            # generate C from the EXE (writes generated/)
-cmake -S . -B build -G "Unix Makefiles"
+pwsh tools/regen.ps1 -PSXRECOMP_ROOT F:/Projects/psxrecomp/_wt-ape-fw
+cmake -S . -B build -G "Unix Makefiles" -DPSXRECOMP_ROOT=F:/Projects/psxrecomp/_wt-ape-fw
 cmake --build build -j16
 ./build/psx-runtime.exe --game game.toml
 ```

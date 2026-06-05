@@ -17,6 +17,7 @@ strict = true
 [runtime]
 debug_port = 4480
 window_title = "ApeEscapeRecomp"
+controller = "dualshock"
 memcard_dir = "saves"
 
 # ── Audit-specific config (consumed by psxrecomp-v4/tools/*.py and tests) ──
