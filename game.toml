@@ -20,6 +20,14 @@ window_title = "ApeEscapeRecomp"
 controller = "dualshock"
 memcard_dir = "saves"
 
+[video]
+# Auto-skip FMVs: when a streaming movie (XA audio + MDEC) is detected, run it
+# uncapped and muted so it blows through in a fraction of a second instead of
+# playing in full. Default-on for Ape Escape per user preference. (Ape has no
+# per-movie frame-total table wired yet, so this fast-forwards the movie rather
+# than truncating it on frame 1; that is the general/universal skip path.)
+auto_skip_fmv = true
+
 # ── Audit-specific config (consumed by psxrecomp-v4/tools/*.py and tests) ──
 # Schema mirrors psxrecomp-v4/bios/SCPH1001.toml. Paths are relative to the
 # project root.
