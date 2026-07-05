@@ -1,2 +1,5 @@
+# 2026-07-05: FF to facelifted master (OpenGL+Vulkan renderers, native-wide 16:9,
+# HLE boot tier, TCC overlay tier, CD-timing/FMV fixes, MMX5 bring-up).
+# Regenerated game C against overlay codegen hash 0x7ea4ba61.
 branch=master
-sha=e0c819cf6b86048f8a0f3c5991333bb5395c4bee
+sha=80f4ed66a54cd81bdcdb4d9ca69b28f7d5fc5ff7

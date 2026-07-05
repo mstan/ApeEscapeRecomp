@@ -21,4 +21,21 @@ psxrecomp_add_runtime_target(psx-runtime
     WINDOW_TITLE "ApeEscapeRecomp"
     DEFAULT_BIOS_PATH "${PSXRECOMP_ROOT}/bios/SCPH1001.BIN"
     DEFAULT_GAME_CONFIG_PATH "game.toml"
+    # Per-game executable name so each title's process is distinct (killing/
+    # launching one title by name never hits another's running instance).
+    EXE_NAME "ApeEscapeRecomp"
 )
+
+# Per-game launcher art override. The framework copies its shared launcher assets
+# (img/disc.png etc. — the default is Tomba's disc) next to the exe inside
+# psxrecomp_add_runtime_target above; this copies this repo's launcher_art/ on top
+# AFTERWARD (POST_BUILD commands run in add order) so the launcher shows Ape
+# Escape's disc. img/disc.png is a generated PLACEHOLDER — drop official box/disc
+# art into launcher_art/img/ to replace it.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art")
+    add_custom_command(TARGET psx-runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art"
+            "$<TARGET_FILE_DIR:psx-runtime>"
+        COMMENT "Overriding launcher art with ApeEscapeRecomp/launcher_art")
+endif()

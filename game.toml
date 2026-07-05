@@ -28,6 +28,25 @@ memcard_dir = "saves"
 # than truncating it on frame 1; that is the general/universal skip path.)
 auto_skip_fmv = true
 
+# Controller defaults. Ape Escape is a dual-analog title — the whole monkey-net /
+# movement scheme is built around the DualShock's two analog sticks, so the game
+# expects an analog-capable pad (id 0x73) to be present. Present a DualShock by
+# default (default_mode = "analog"): the left stick drives movement and the
+# physical D-pad is folded onto the left stick at full deflection, so classic
+# D-pad control still works in analog mode. We do NOT lock the mode — Ape works
+# with both D-pad and analog, so the launcher keeps the full Hybrid | Analog |
+# D-Pad selector available (allow_hybrid stays true); Analog is just the default
+# so both sticks report out of the box. Per-install settings.toml [controller]
+# p1_mode/p2_mode still override.
+[controller]
+# Ape Escape is a dual-analog title (the right stick swings the catch net), so it
+# is hardcoded to Analog. lock_mode hides the launcher's whole pad-mode selector
+# (no Hybrid | Analog | D-Pad) and forces every port to default_mode. Same path
+# Tomba 2 uses to lock digital-only; here it locks analog-only.
+default_mode = "analog"
+lock_mode    = true
+deadzone     = 10000
+
 # ── Audit-specific config (consumed by psxrecomp-v4/tools/*.py and tests) ──
 # Schema mirrors psxrecomp-v4/bios/SCPH1001.toml. Paths are relative to the
 # project root.
