@@ -65,6 +65,18 @@ screen_h_imms = ["0xF1"]
 # so the auto-detector cannot qualify it) — widened explicitly.
 slti_sites = ["0x8004AB64"]
 
+# Per-OBJECT screen bounding-box cull (distinct from the per-vertex funnel
+# above). Each site is `addiu projX,+0x20 ; andi 0xffff ; sltiu ,0x1C1` — a
+# visibility window of screen-X in [-32, 417] that decides whether to draw a
+# whole object. 417 < the 16:9 wide edge (429), so objects in the reveal margin
+# (e.g. the amusement-park ferris-wheel cars) pop out. Widen both edges: the
+# addiu bias gets +psx_ws_x_margin (bias_sites), the sltiu window +2*margin
+# (range_sites); identity at 4:3. Ghidra-evidenced, 8 main-EXE sites.
+bias_sites  = ["0x80059d28", "0x800699f4", "0x8006ae04", "0x8006d87c",
+               "0x8006de40", "0x8006f14c", "0x8006f538", "0x80084430"]
+range_sites = ["0x80059d30", "0x800699fc", "0x8006ae0c", "0x8006d884",
+               "0x8006de44", "0x8006f150", "0x8006f540", "0x80084434"]
+
 # Controller defaults. Ape Escape is a dual-analog title — the whole monkey-net /
 # movement scheme is built around the DualShock's two analog sticks, so the game
 # expects an analog-capable pad (id 0x73) to be present. Present a DualShock by
