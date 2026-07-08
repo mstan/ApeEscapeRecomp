@@ -32,6 +32,10 @@ bios_hle = true
 # than truncating it on frame 1; that is the general/universal skip path.)
 auto_skip_fmv = true
 
+# OpenGL renderer by default (validated for Ape: native-wide widescreen + the
+# GL compositor perf fix). The launcher's Renderer setting still offers Software.
+renderer = "opengl"
+
 # Widescreen ships OFF (authentic 4:3); the launcher's experimental Widescreen
 # toggle / settings.toml opts into 16:9 native-wide at runtime.
 aspect_ratio = "4:3"
@@ -94,7 +98,17 @@ range_sites = ["0x80059d30", "0x800699fc", "0x8006ae0c", "0x8006d884",
 # Tomba 2 uses to lock digital-only; here it locks analog-only.
 default_mode = "analog"
 lock_mode    = true
-deadzone     = 10000
+# lock_device stays OFF: the launcher's Player 1/2 cards (device dropdown, keybind
+# access) remain visible. Only the pad-MODE selector (Hybrid | Analog | D-Pad) is
+# removed by lock_mode above — the card just shows the fixed Analog (DualShock)
+# configuration. Any plugged pad (or the keyboard, folded onto the analog stick)
+# drives it; the game always sees a DualShock.
+lock_device  = false
+# Radial (circular) deadzone, so ~12% is plenty — a real DualShock only needs a
+# small centre dead region. The old 30000-ish value was tuned for the previous
+# per-axis SQUARE deadzone (which needed to be large to hide diagonal notching);
+# with the radial deadzone that made the net-aim feel dead. Tune in the launcher.
+deadzone     = 4000
 
 # ── Audit-specific config (consumed by psxrecomp-v4/tools/*.py and tests) ──
 # Schema mirrors psxrecomp-v4/bios/SCPH1001.toml. Paths are relative to the

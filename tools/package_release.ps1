@@ -23,16 +23,36 @@ $MingwBin = "C:\msys64\mingw64\bin"
 
 $env:PATH = "$MingwBin;$env:PATH"
 
+# cmake writes benign warnings (e.g. freetype's cmake_minimum_required
+# deprecation) to STDERR. Under $ErrorActionPreference='Stop', PowerShell 5.1
+# wraps native-command stderr as a terminating error and would abort the whole
+# release for a non-error. Run the native cmake invocations with the preference
+# relaxed and gate on the real signal -- $LASTEXITCODE -- instead.
+function Invoke-Native {
+    param([scriptblock]$Cmd, [string]$What)
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $Cmd
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $old
+    if ($code -ne 0) { throw "$What failed (exit $code)" }
+}
+
 # Build: Release, debug tools OFF, launcher ON. PSX_STATIC_RUNTIME defaults ON
 # for MinGW Release so the exe imports only system DLLs (self-contained).
-cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF -DPSX_LAUNCHER=ON
-cmake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS
+Invoke-Native { cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF -DPSX_LAUNCHER=ON } "cmake configure"
+Invoke-Native { cmake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
 
 if (Test-Path $StageRoot) { Remove-Item -Recurse -Force $StageRoot }
 New-Item -ItemType Directory -Force $Stage | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $Stage "saves") | Out-Null
 
-Copy-Item (Join-Path $BuildPath "psx-runtime.exe") (Join-Path $Stage "ApeEscapeRecomp.exe")
+# The runtime target's OUTPUT_NAME is derived from window_title -> the built exe
+# is ApeEscapeRecomp.exe, NOT psx-runtime.exe. Prefer that (fall back to the
+# generic name for older builds). Copying psx-runtime.exe shipped a STALE binary.
+$DevExe = Join-Path $BuildPath "ApeEscapeRecomp.exe"
+if (-not (Test-Path $DevExe)) { $DevExe = Join-Path $BuildPath "psx-runtime.exe" }
+Copy-Item $DevExe (Join-Path $Stage "ApeEscapeRecomp.exe")
 if (Test-Path (Join-Path $Root "README.md"))         { Copy-Item (Join-Path $Root "README.md") $Stage }
 if (Test-Path (Join-Path $Root "LICENSE"))           { Copy-Item (Join-Path $Root "LICENSE") $Stage }
 if (Test-Path (Join-Path $Root "RELEASE_NOTES.md"))  { Copy-Item (Join-Path $Root "RELEASE_NOTES.md") $Stage }
@@ -52,51 +72,23 @@ $fontCount = (Get-ChildItem (Join-Path $Stage "fonts") -Filter *.ttf -ErrorActio
 $imgCount  = (Get-ChildItem (Join-Path $Stage "img") -Filter *.png -ErrorAction SilentlyContinue).Count
 Write-Host "Bundled launcher assets: launcher.rml + $fontCount font(s) + $imgCount image(s)"
 
-# Player-facing game.toml (dev-only [audit] section omitted).
-@"
-[game]
-name = "Ape Escape"
-id = "SCUS-94423"
-exe = "apeescape/SCUS_944.23"
-disc = "apeescape/Ape Escape (USA).cue"
-load_address = "0x80010000"
-entry_pc = "0x800A3660"
-text_size = "0x000A5000"
-stack_base = "0x801FFFF0"
-
-# Required block; used only by the developer recompiler tool, not at runtime.
-[recompiler]
-seeds = "seeds/ghidra_funcs.txt"
-out_dir = "generated"
-
-# ---- Player-adjustable options ------------------------------------------
-[runtime]
-window_title = "Ape Escape Recompiled"
-memcard_dir = "saves"
-# Authentic 1x CD timing; fast loads come from turbo_loads (preserves timing).
-disc_speed = "1x"
-fast_boot  = false
-# Turbo loads: run the machine at full host speed during a load (timing
-# preserved, audio plays through). Toggleable in the launcher (Settings).
-turbo_loads = true
-
-[video]
-# supersampling: render at N* native res and downsample (1 = native, 2 = good).
-supersampling = 2
-antialiasing  = true
-texture_filtering = "nearest"
-renderer = "opengl"
-# Skip full-motion videos automatically (default on). Launcher: Settings -> Skip FMVs.
-auto_skip_fmv = true
-aspect_ratio = "4:3"
-
-# ---- Controller ---------------------------------------------------------
-# Ape Escape requires a DualShock (it won't poll the face buttons until it
-# sees an analog pad), so present an analog pad by default.
-[controller]
-default_analog = true
-deadzone = 12000
-"@ | Set-Content -Encoding ASCII (Join-Path $Stage "game.toml")
+# Player-facing game.toml: copy the REAL game.toml (the single source of truth
+# for all runtime/video/controller/widescreen config) minus the dev-only [audit]
+# section, so the shipped config can never drift from what was validated.
+$realToml = Get-Content (Join-Path $Root "game.toml") -Raw
+# Cut at the dev-only audit block. Match the ASCII word "Audit-specific" (its
+# comment line uses non-ASCII box-drawing chars we must not embed here), then
+# back up to that line's start so the comment goes too; fall back to [audit].
+$idx = $realToml.IndexOf("Audit-specific")
+if ($idx -ge 0) {
+    $ls = $realToml.LastIndexOf("`n", $idx)
+    $cut = if ($ls -ge 0) { $ls } else { 0 }
+} else {
+    $cut = $realToml.IndexOf("[audit]")
+}
+$playerToml = if ($cut -ge 0) { $realToml.Substring(0, $cut).TrimEnd() + "`n" } else { $realToml }
+$playerToml | Set-Content -Encoding ASCII (Join-Path $Stage "game.toml")
+Write-Host "Staged player game.toml from real game.toml (audit section stripped)"
 
 # Verify self-containment: imports must be system DLLs only.
 $objdump = Join-Path $MingwBin "objdump.exe"

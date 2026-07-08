@@ -1,58 +1,95 @@
 # ApeEscapeRecomp
 
-Static recompilation of **Ape Escape (USA)** (SCUS-94423) to native code,
-built on the shared **psxrecomp v4** framework — the same pipeline behind
-TombaRecomp. The goal is a native binary that runs the game with no emulator
-behind it.
+Ape Escape (USA, SCUS-94423) statically recompiled to a native PC executable
+with [PSXRecomp](https://github.com/mstan/psxrecomp) — the same framework behind
+[TombaRecomp](https://github.com/mstan/TombaRecomp) and
+[MegaManX6Recomp](https://github.com/mstan/MegaManX6Recomp).
+
+## What This Is
+
+This repository contains the game-specific configuration, seeds, tools, and
+build glue for running Ape Escape on the PSXRecomp framework. The game's MIPS
+code is machine-translated ("recompiled") ahead of time into native C, then
+compiled into a real Windows program that runs the game's own logic on a
+faithful simulation of the PS1 hardware (GPU, SPU, GTE, memory cards) plus the
+real, recompiled PS1 BIOS — no high-level emulation shims.
+
+It does **not** contain the Ape Escape disc image, the PS1 BIOS, generated game
+code, or any decompiled game C. Those are produced locally from your own legally
+obtained assets.
+
+Important files:
+
+- `game.toml`: runtime / recompiler / video / controller / widescreen config.
+- `seeds/`: Ghidra-derived function starts and game-specific seed data.
+- `tools/regen.ps1`: regenerates the recompiled C output.
+- `tools/package_release.ps1`: builds the redistributable release zip.
+- `psxrecomp-v4.pin`: framework commit this project is known-good against.
+- `ISSUES.md`: game-specific issue log.
+- `DISC.md`: source-disc identity and verification hashes.
 
 ## Status
 
-**Scaffolded.** Project layout, config, the disc image, the extracted boot EXE,
-and the Ghidra dump are all in place. Not yet recompiled or booting — that is
-the next phase.
+**Playable preview — `v0.0.1-alpha`.** This is the *first* public cut. Ape
+Escape **boots from the PS1 BIOS and plays** — through the intro, the title, and
+into gameplay, with dual-analog controller input and memory-card **save/load**,
+and **no known crashes**. It has not yet been verified all the way to the end,
+so treat it as a very playable preview rather than a certified full playthrough.
 
-## Required user-owned assets (not included in the repo)
+| Area | State |
+|---|---|
+| Boot (real PS1 BIOS) | ✅ Boots to intro / title / gameplay |
+| Rendering | ✅ OpenGL (default) and Software backends |
+| Controller | ✅ DualShock analog (auto-bound; the net/movement scheme is dual-stick) |
+| Memory cards | ✅ Standard PS1 `.mcd` save/load |
+| FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
+| Widescreen 16:9 / 21:9 | ⚠️ Experimental (opt-in) — see below |
+| Full playthrough | ⚠️ Not yet verified end-to-end |
 
-- PlayStation BIOS `SCPH1001.BIN` — provided by the framework at
-  `psxrecomp-v4/bios/SCPH1001.BIN`.
-- The Ape Escape (USA) disc image (`apeescape/Ape Escape (USA).cue` + `.bin`)
-  and the extracted boot EXE `apeescape/SCUS_944.23`. These are local-only and
-  gitignored.
+### Experimental widescreen
 
-## Layout
+An **experimental 16:9 / 21:9 mode** is available in the launcher (off by
+default; the game ships authentic 4:3). It renders a genuinely wider field of
+view — the 3D world fills the frame and the HUD is re-anchored to the true wide
+corners — with a native-wide compositor perf fix so it holds 60fps. A few rough
+edges remain on that path (title/menu sky corners, some distance/edge object
+pop-in); see `ISSUES.md`. Regular 4:3 play is byte-for-byte the original
+presentation and is unaffected.
 
-| Path | Purpose |
-|------|---------|
-| `game.toml` | Game identity + recompiler/runtime config (entry point, load address, text size, disc path). |
-| `apeescape/` | Disc image + extracted boot EXE `SCUS_944.23` + `SYSTEM.CNF` (local). |
-| `seeds/` | Function-start seeds fed to the recompiler. |
-| `annotations/` | CSV of human notes emitted as comments in the generated C. |
-| `ghidra/` | Headerless dump + `instructions.txt` for reverse engineering. |
-| `generated/` | Recompiled C (local; produced by `tools/regen.ps1`). |
-| `psxrecomp-v4` | Default junction to the shared framework. Override with `PSXRECOMP_ROOT` or CMake `-DPSXRECOMP_ROOT=...` for isolated worktrees. |
+## Playing
 
-## Build (from source)
+1. Run `ApeEscapeRecomp.exe`. A launcher window opens.
+2. Set your PlayStation BIOS (a legally obtained `SCPH1001.BIN`, 512 KB).
+3. Set the game disc (a legally obtained Ape Escape (USA, SCUS-94423) image —
+   `.cue`+`.bin`, pick the `.cue`). Do **not** convert to a 2048-byte "cooked"
+   `.iso`; that discards the XA sectors used for FMV/audio.
+4. Adjust options if you like (renderer, supersampling, experimental widescreen),
+   then press **Launch**.
 
-```
-pwsh tools/regen.ps1 -PSXRECOMP_ROOT F:/Projects/psxrecomp/_wt-ape-fw
-cmake -S . -B build -G "Unix Makefiles" -DPSXRECOMP_ROOT=F:/Projects/psxrecomp/_wt-ape-fw
-cmake --build build -j16
-./build/psx-runtime.exe --game game.toml
-```
+Ape Escape is a dual-analog title — the right stick swings the catch net — so an
+analog controller is strongly recommended. Any plugged pad is auto-bound and
+presented to the game as a DualShock; a keyboard folds onto the analog stick.
+The selected BIOS/disc paths and options are saved next to the exe.
 
-(The framework recompiler `psxrecomp-v4/recompiler/build/psxrecomp-game.exe`
-must be built first; see the framework's own README.)
+## Development Rules
 
-## Disc identity
+- Use the real recompiled BIOS and real hardware simulation in PSXRecomp.
+- No HLE BIOS shims, no stubs, no fake events, no hand-edited generated files.
+- Framework changes go in `mstan/psxrecomp`, not here.
+- Game binaries, generated code, memory cards, Ghidra databases, and build
+  outputs stay local.
+- See `CLAUDE.md` for project-specific rules.
 
-`MODE2/2352` bin+cue, single data track, NTSC-U. Hashes recorded in
-`ghidra/instructions.txt` siblings / project notes; verify a fresh dump matches
-before blaming a regression.
+## License
 
-## Rules
+PolyForm Noncommercial 1.0.0. See `LICENSE`.
 
-See `CLAUDE.md`. In short: fixes go in the framework or `game.toml`, never in
-`generated/`; no stubs; binaries stay local.
+Ape Escape is copyright Sony Computer Entertainment / SIE. This repository
+contains none of the game's original binaries or assets. Release packages
+contain no game assets, no disc data, and no BIOS image — those are always read
+from files you supply. The release executable contains a statically recompiled
+(machine-translated) build of the game's code, the same distribution model used
+by other static recompilation projects such as N64: Recompiled.
 
 ---
 

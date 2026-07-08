@@ -1,8 +1,10 @@
-# 2026-07-05: master with Ape bring-up fixes landed — UNR GTE perspective
-# divide + textured-poly SetTPage (black additive-glow fix, D12 axis5_gpu),
-# launcher settings/keybinds framework, beetle fntrace a2/a3, and the
-# control-flow-aware function-extent recompiler fix (CODEGEN-AFFECTING —
-# regen game C against the new emitter before the next release build; the
-# runtime-only fixes need an exe rebuild only).
+# 2026-07-07: Ape Escape builds against the shared framework master again.
+# The feat/ape-widescreen-perf-hle worktree was merged to master and retired;
+# all of the Ape widescreen / native-wide GL perf / HLE / cdrom-latency work
+# (and the codegen function-extent fix) now lives on master. The junction
+# psxrecomp-v4 -> F:/Projects/psxrecomp/psxrecomp reflects this.
+#
+# CODEGEN note: the control-flow-aware function-extent recompiler fix is on
+# master — regen game C against the master emitter before a release build.
 branch=master
-sha=0b958796cb39864072794f8a31c1783bb6b18dad
+sha=54c0454
