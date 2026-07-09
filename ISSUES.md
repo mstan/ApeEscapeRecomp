@@ -1,11 +1,11 @@
 # ApeEscapeRecomp — Issues
 
-Current state (v0.0.1-alpha): Ape Escape **boots from the PS1 BIOS and plays** as
+Current state (v0.0.2-alpha): Ape Escape **boots from the PS1 BIOS and plays** as
 a native Windows program — through the intro, title, and gameplay, with dual-
 analog controller input. It has not yet been verified all the way to the end, so
 treat it as a very playable preview rather than a certified full playthrough.
-**Memory-card save/load is currently not functioning** (issue #4) — everything
-else plays; the game just can't persist progress yet.
+**Memory-card save/load now works** (issue #4 fixed in v0.0.2) — progress saves
+and loads back on standard `.mcd` images.
 
 An **experimental 16:9 / 21:9 widescreen** mode is available in the launcher
 (off by default). It renders a genuinely wider field of view — the 3D world
@@ -65,21 +65,26 @@ them.
 
 ---
 
-## #4 — Memory-card save/load does not complete — OPEN (not widescreen-related)
+## #4 — Memory-card save/load does not complete — FIXED (v0.0.2)
 
-Reaching the memory-card screen to save or load progress does not complete. The
-low-level card protocol works on both this runtime and the Beetle oracle (card
+Reaching the memory-card screen to save or load progress did not complete. The
+low-level card protocol worked on both this runtime and the Beetle oracle (card
 reads succeed, an empty card reports empty, the SwCARD I/O-complete flag sets and
-the card fhandler runs), so this is a **higher-layer timing race**, not a dead
-card path. Two nondeterministic failure modes are seen: a soft stall on
-"Checking… MEMORY CARD" (the interrupt-driven async card read aborts partway when
-a per-byte SIO ACK IRQ fails to fire), and, less often, a hard freeze from a
-register smear at the card-op consumer. Both trace to the same root: the async
-card read's per-byte SIO ACK-IRQ clocking under the HLE-scheduler + dirty-interp +
-IRQ-delivery interaction (the Stage-5 SIO axis). The fix is a faithful,
-oracle-validated class-level SIO fix in the framework — not a per-game poke — and
-is tracked as foundation work. Until then, treat Ape Escape as a play-through
-preview that cannot persist saves.
+the card fhandler runs), so this was a **higher-layer timing race**, not a dead
+card path. Two nondeterministic failure modes were seen: a soft stall on
+"Checking… MEMORY CARD" (the interrupt-driven async card read aborted partway),
+and, less often, a hard freeze from a register smear at the card-op consumer.
+
+**Fixed** by a framework-level change to how a cooperative in-exception
+thread-switch is *deferred* across interrupt delivery. The deferred switch is now
+kept pending at dirty-interpreter pump sites (where a candidate resume PC is
+committed but the live CPU state may not yet be materialized) and is not deferred
+at all when the interrupted PC is in low BIOS/kernel space (which would otherwise
+re-enter the same VBlank handler forever and starve the target thread). The switch
+is honored only at a boundary where the resumed thread's CPU state is coherent, so
+the card read/write completes cleanly. Class-level fix in the framework (no
+per-game poke); validated on Ape Escape and regression-checked against MegaManX6
+and Tomba (1).
 
 ---
 

@@ -1,10 +1,15 @@
-# 2026-07-07: Ape Escape builds against the shared framework master again.
-# The feat/ape-widescreen-perf-hle worktree was merged to master and retired;
-# all of the Ape widescreen / native-wide GL perf / HLE / cdrom-latency work
-# (and the codegen function-extent fix) now lives on master. The junction
-# psxrecomp-v4 -> F:/Projects/psxrecomp/psxrecomp reflects this.
+# 2026-07-09 (v0.0.2): Ape Escape builds against the shared framework master.
+# master now carries the memory-card save/load fix (issue #4): a change to how a
+# cooperative in-exception thread-switch is deferred across interrupt delivery
+# (runtime/src/interrupts.c + debug_server.c). prod-emit codegen is default-on.
 #
-# CODEGEN note: the control-flow-aware function-extent recompiler fix is on
-# master — regen game C against the master emitter before a release build.
+# RELEASE-BUILD NOTE: master's integrated launcher was mid-revamp to a custom
+# stb/modern-GL launcher whose GL 3.0+ loader ("Phase 2b", SDL_GL_GetProcAddress)
+# is not yet implemented, so it does not link into a game build. The v0.0.2
+# release binary was built from master with the 3 stb-launcher commits reverted
+# to the working RmlUi launcher (game code — codegen + runtime save fix —
+# unchanged from master). Finish the stb launcher's GL loader to drop the revert.
+#
+# CODEGEN note: regen game C against the master emitter before a release build.
 branch=master
-sha=54c0454
+sha=0cb2a77

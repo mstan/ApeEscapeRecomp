@@ -30,10 +30,10 @@ Important files:
 
 ## Status
 
-**Playable preview — `v0.0.1-alpha`.** This is the *first* public cut. Ape
-Escape **boots from the PS1 BIOS and plays** — through the intro, the title, and
-into gameplay, with dual-analog controller input and memory-card **save/load**,
-and **no known crashes**. It has not yet been verified all the way to the end,
+**Playable preview — `v0.0.2-alpha`.** Ape Escape **boots from the PS1 BIOS and
+plays** — through the intro, the title, and into gameplay, with dual-analog
+controller input and working memory-card **save/load** (fixed in v0.0.2), and
+**no known crashes**. It has not yet been verified all the way to the end,
 so treat it as a very playable preview rather than a certified full playthrough.
 
 | Area | State |

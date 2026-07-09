@@ -1,9 +1,18 @@
-# Ape Escape Recompiled — v0.0.1-alpha
+# Ape Escape Recompiled — v0.0.2-alpha
 
-The first public cut. Ape Escape boots from the real PlayStation BIOS and
-**plays** as a native Windows program with no emulator behind it, on the
+Ape Escape boots from the real PlayStation BIOS and **plays** as a native
+Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## 🆕 New in v0.0.2
+
+- **Memory-card save / load now works.** The card screen completes reliably:
+  progress saves and loads back on standard PS1 `.mcd` images. This closes the
+  one gap called out in v0.0.1 (issue #4) — a framework-level fix to how a
+  cooperative thread-switch is deferred across interrupt delivery, so the card
+  read/write is only resumed at a boundary where its CPU state is coherent.
+  Validated against MegaManX6 and Tomba (1) with no regression.
 
 ## ✅ What works
 
