@@ -81,6 +81,21 @@ and Tomba (1).
 
 ---
 
+## #5 — Widescreen: HUD / UI elements are stretched — OPEN
+
+On the projection-and-stretch widescreen path, 3D geometry is squashed at GTE
+projection time so the final frame stretch restores its proportions. Screen-space
+2D elements (HUD, menu text, cursors) are **not** projected through the GTE, so
+the final stretch widens them: the HUD and UI render proportionally stretched in
+16:9 / 21:9. Reported during play validation of the v0.0.3-era widescreen build.
+
+**Desired:** classify Ape's HUD/UI 2D packets and preserve their authored 4:3
+proportions through the wide stretch — same investigation shape as the
+framework's existing HUD-proportion handling for Tomba (sprite-tag/HUD packet
+classification). Deferred as a follow-up to the dome/cull fixes above.
+
+---
+
 ## Notes
 
 - These are **enhancement-tier** items on the experimental widescreen path.
