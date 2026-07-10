@@ -1,9 +1,21 @@
-# Ape Escape Recompiled — v0.0.2-alpha
+# Ape Escape Recompiled — v0.0.3-alpha
 
 Ape Escape boots from the real PlayStation BIOS and **plays** as a native
 Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## 🆕 New in v0.0.3
+
+- **L3 / R3 (stick clicks) now work.** Ape Escape uses the stick-click buttons
+  for core moves, and they previously could not be produced by any input
+  device. They are now first-class across the whole input stack:
+  - **Controller:** clicking the left/right stick sends L3/R3 out of the box
+    (`l3 = leftstick`, `r3 = rightstick` in `input.ini`, remappable).
+  - **Keyboard:** bound to **T** / **Y** by default (continuing the
+    Q/W/E/R shoulder row), rebindable on the launcher's Controls page.
+  - Existing installs pick the new defaults up automatically unless you had
+    explicitly set `l3`/`r3` in your own `input.ini`/`keybinds.ini`.
 
 ## 🆕 New in v0.0.2
 
@@ -20,7 +32,8 @@ behind TombaRecomp and MegaManX6Recomp.
   **no known crashes**.
 - **Dual-analog controller.** Ape Escape is built around the DualShock's two
   sticks (the right stick swings the net). Any plugged pad is auto-bound and
-  presented to the game as a DualShock; a keyboard folds onto the analog stick.
+  presented to the game as a DualShock, including L3/R3 stick clicks; a
+  keyboard folds onto the analog stick.
 - **Memory-card save / load.** Standard PS1 `.mcd` images, emulator-compatible.
 - **FMV + audio.** MDEC video and XA/SPU audio play; FMVs can be auto-skipped.
 - **OpenGL renderer by default**, with a Software renderer selectable in the
