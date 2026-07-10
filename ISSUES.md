@@ -10,8 +10,9 @@ and loads back on standard `.mcd` images.
 An **experimental 16:9 / 21:9 widescreen** mode is available in the launcher
 (off by default). It renders a genuinely wider field of view — the 3D world
 fills the frame and the HUD sits at the true wide corners — with a per-game
-compositor perf fix so it holds 60fps. The two items below are the known rough
-edges in that mode; regular 4:3 play is unaffected.
+compositor perf fix so it holds 60fps. Widescreen is **experimental and has
+known visual bugs** — issues #1–#3 below are the known rough edges in that
+mode. Regular **4:3 is the accurate default** and is unaffected.
 
 ---
 
