@@ -1,9 +1,21 @@
-# Ape Escape Recompiled — v0.0.3-alpha
+# Ape Escape Recompiled — v0.0.4-alpha
 
 Ape Escape boots from the real PlayStation BIOS and **plays** as a native
 Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## 🛠️ New in v0.0.4 — critical boot fix
+
+- **The v0.0.2 and v0.0.3 zips could not boot on user machines — fixed.**
+  Those builds relied on a reference copy of the game's boot executable that
+  only exists in a development checkout (it is game data, so it is never
+  shipped in the zip). Without it the runtime's text-integrity guard never
+  armed and the boot died silently just after the BIOS handed control to the
+  game. The runtime now extracts that reference directly from **your disc
+  image** — the same bytes the BIOS boots — so it works on every install.
+  If you downloaded v0.0.2 or v0.0.3 and it closed itself moments after
+  launch, this release is the fix; settings and saves carry over.
 
 ## 🆕 New in v0.0.3
 

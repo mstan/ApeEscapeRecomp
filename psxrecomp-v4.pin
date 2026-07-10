@@ -1,16 +1,23 @@
-# 2026-07-10 (v0.0.3): Ape Escape builds against the shared framework master.
-# master now carries first-class L3/R3 (stick click) binds: controller defaults
-# leftstick/rightstick -> L3/R3, keyboard defaults T/Y, launcher Controls chips,
-# shipped input.ini templates (runtime/src/main.cpp + psx_keybinds.c). Ape
-# Escape needs L3/R3 for core moves, so this is the headline of v0.0.3.
-# Also inherited since v0.0.2's pin (0cb2a77): the RmlUi launcher RESTORED on
-# master (f36b458 — the stb-launcher revert workaround is no longer needed),
-# the audio-quality campaign (54df1ec), MMX6 mirrored-UV rect fix (184a18a),
-# and MMX5/MMX4 true-wide merges (ab54eac / aca16bb).
+# 2026-07-10 (v0.0.4): Ape Escape builds against the shared framework master.
+# master now carries the CRITICAL release-install boot fix (e5a958f): the
+# dirty-RAM text-image guard arms from the boot EXE extracted off the user's
+# DISC image when no local EXE file exists. The v0.0.2/v0.0.3 zips could not
+# boot outside a dev checkout: the guard only armed from a loose local
+# apeescape/SCUS_944.23 found via a repo-marker walk, and without it the
+# game-start latch never fired, the shell-window shadow (RAM 0x30000-0x5AFFF
+# -> shell ROM) stayed over real game text, and the boot died in a jump to
+# PC=0 at frame 14 (both HLE and LLE). In-repo validation runs armed the
+# guard invisibly, which is how the broken zips shipped green. The fntrace
+# alternate game-start latch now also requires a registered image.
+# Everything from v0.0.3 (L3/R3 stick-click binds) carries forward.
 #
-# CODEGEN note: no regen for v0.0.3 (runtime-only input change; the packager
-# intentionally builds the validated generated/ as-is). The exact combination —
-# this generated/ + master runtime at the pin SHA — was validated in-game
-# (boot -> title -> gameplay, user-confirmed L3/R3 on a real pad).
+# CODEGEN note: no regen for v0.0.4 (runtime-only fix; the packager
+# intentionally builds the validated generated/ as-is). The packaged zip was
+# verified booting to the game intro from a clean directory OUTSIDE any repo
+# (fresh-user simulation), guard "armed ... disc SCUS_944.23", on both HLE
+# and LLE boot paths; in-repo builds still arm from the local EXE.
+#
+# RELEASE GATE (learned from v0.0.3): before publishing, ALWAYS extract the
+# packaged zip to a directory outside any git checkout and verify it boots.
 branch=master
-sha=f1afc7f
+sha=e5a958f
