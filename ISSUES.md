@@ -8,15 +8,13 @@ treat it as a very playable preview rather than a certified full playthrough.
 and loads back on standard `.mcd` images.
 
 An **experimental 16:9 / 21:9 widescreen** mode is available in the launcher
-(off by default). It renders a genuinely wider field of view — the 3D world
-fills the frame and the HUD sits at the true wide corners — with a per-game
-compositor perf fix so it holds 60fps. Widescreen is **experimental and has
-known visual bugs** — issues #1–#3 below are the known rough edges in that
-mode. Regular **4:3 is the accurate default** and is unaffected.
+(off by default). It uses Ape's stable GTE projection-and-stretch path for a
+wider 3D field of view. Regular **4:3 is the accurate default** and is
+unaffected.
 
 ---
 
-## #1 — Widescreen: title/menu sky "dome" doesn't reach the wide corners — OPEN
+## #1 — Widescreen: title sky "dome" doesn't reach the wide corners — FIXED
 
 In widescreen, the **title and some menu screens** draw their sky as a
 GTE-projected 3D dome mesh authored to fill a 4:3 frame. Its curved edge doesn't
@@ -24,27 +22,21 @@ reach the corners of the wider frame, so those corners show black. The 3D world,
 gameplay skies, and cutscene skies all fill correctly — this is specific to the
 finite sky-dome billboards on a few screens.
 
-**Why the obvious fix doesn't work:** a depth-gated "scale the far layer outward"
-approach was tried and shelved. The dome has a *range* of projected depths (its
-center is nearer than its edges), so depth-gating scales only its far edge and
-*warps* it rather than expanding it uniformly — and pushing harder never fully
-closes the corners. The clean fix is to bracket the **specific sky-draw
-function** so the whole dome scales together (the same mechanism Tomba uses for
-its far backdrop). That function was traced to the title's **overlay code**, so
-wiring it needs the overlay-compile path too — a deliberate follow-up, not a
-quick tweak. Live probes for the investigation are in the runtime
-(`ws_dome` / `ws_dome_probe` / `ws_far_threshold` TCP commands).
+**Fixed** by identifying the title overlay's exact 16x16 sky-mesh projection
+call (`0x8013660C`, return `0x80136614`). Only that producer bypasses the normal
+widescreen X squash, preserving its authored 4:3 coverage for the final frame
+stretch. The old depth-gated experiment is not used, so attract-demo geometry
+is untouched.
 
 ---
 
-## #2 — Widescreen: some objects still cull at the 4:3 edge (e.g. amusement-park ferris wheel) — OPEN
+## #2 — Widescreen: ferris-wheel cars cull at the 4:3 edge — FIXED
 
-Most geometry that was clipped at the 4:3 edge now draws out to the wide edge
-(the render-funnel and per-object screen culls were widened). But a few objects —
-notably the **ferris-wheel cars** in the amusement-park intro — still pop in/out
-at the old 4:3 boundary. They're gated by a *different* cull mechanism than the
-ones already widened, which needs a live trace of that specific scene to
-pinpoint and widen. Cosmetic, widescreen-only.
+The ferris cabins remain submitted throughout the amusement-park shot on Ape's
+original projection-and-stretch widescreen path. The unrelated native-wide
+compositor and broad automatic/per-object cull experiments were removed from
+the game config; those experiments caused severe attract-demo geometry wedges
+without owning the cabin behavior.
 
 ---
 
@@ -93,6 +85,5 @@ and Tomba (1).
 
 - These are **enhancement-tier** items on the experimental widescreen path.
   4:3 is the authentic default and is byte-for-byte the original presentation.
-- Widescreen is offered on both the OpenGL and Software renderers; it was
-  validated primarily on OpenGL (the shipping default), which also carries the
-  native-wide compositor perf fix.
+- Widescreen is offered on both the OpenGL and Software renderers and was
+  validated primarily on OpenGL (the shipping default).
