@@ -81,18 +81,48 @@ and Tomba (1).
 
 ---
 
-## #5 — Widescreen: HUD / UI elements are stretched — OPEN
+## #5 — Widescreen: HUD / UI elements are stretched — OPEN (root-caused)
 
 On the projection-and-stretch widescreen path, 3D geometry is squashed at GTE
 projection time so the final frame stretch restores its proportions. Screen-space
-2D elements (HUD, menu text, cursors) are **not** projected through the GTE, so
-the final stretch widens them: the HUD and UI render proportionally stretched in
-16:9 / 21:9. Reported during play validation of the v0.0.3-era widescreen build.
+2D elements (HUD, menu text, cursors) are **not** projected through the squashed
+RTPS path, so the final stretch widens them: the HUD and UI render proportionally
+stretched in 16:9 / 21:9. Reported during play validation of the v0.0.3-era
+widescreen build.
 
-**Desired:** classify Ape's HUD/UI 2D packets and preserve their authored 4:3
-proportions through the wide stretch — same investigation shape as the
-framework's existing HUD-proportion handling for Tomba (sprite-tag/HUD packet
-classification). Deferred as a follow-up to the dome/cull fixes above.
+**Investigated 2026-07-10 (GP0 ring + wtrace provenance, Fossil Field).**
+- Ape's in-game HUD is mostly **polygons** (gouraud-textured quads/tris 0x3C/
+  0x34/0x3E), not SPRT rects: cookie stack, gadget cross. Only the L2 chip and
+  sparkle dots are SPRTs (0x65/0x67). The framework's untagged-SPRT
+  `hud_sprt_squash` therefore cannot cover it, and untagged polys can't be
+  blanket-squashed (the world is polys).
+- Geometric proof of no-squash: gadget cross spans x 267..366 (flush right, a
+  squash around centre would end it at ~341); cookie stack starts at x=7 (squash
+  would put it at ~31). Both sit at authored 4:3 positions in the squashed frame.
+- HUD packets are heap-allocated inline with world packets (single per-frame
+  arena; addresses shift frame to frame; submission order interleaved) — no
+  address- or order-based classifier exists. The pause menu is the exception
+  (dedicated static arena ~0xCA000-0xCBxxx, world not redrawn while paused).
+- Producer map (wtrace writers → generated-C call graph):
+  `func_8005BF70` (2588 B, jump-table-invoked, no static JAL callers) is the
+  UI/HUD orchestrator. It calls the gadget-cross drawer `0x80043A8C` (dedicated,
+  builder `0x80044EF4`), the L2-chip drawer `0x800691F8` (dedicated, SPRT-store
+  leaf `0x8002B380`), and the HUD cookie-stack path `0x80063628 → 0x80017CD4 →
+  0x800180B8`. Below `0x800180B8` the model-draw helpers (`0x8001B3CC`, the
+  `0x8001A3xx` store loops) are **shared with world object rendering** — the
+  HUD/world discrimination point is the orchestrator subtree, not the builders.
+
+**Fix design (framework class mechanism + per-game config, enhancement tier):**
+`[widescreen] hud_bracket_funcs` — (1) recompiler emits `psx_ws_hud_enter(cpu)`
+at entry of listed funcs (same emission pattern as `sprite_tag_funcs` /
+`unsquash_funcs`; regen required); (2) runtime bracket records guest (sp, ra)
+and the dispatcher closes it when pc==ra with sp restored (the existing
+(ra,sp)-contract pattern); (3) while bracketed, guest RAM stores mark a
+frame-stamped HUD packet-address hash (same table shape as the sprite tag);
+(4) gpu.c squashes tagged prims — polys and rects — around the existing
+`ws_hud_pivot` thirds-anchor; identity at 4:3 / unconfigured. Ape config:
+bracket `0x8005BF70` (verify pause-menu coverage at implementation time; add
+`0x80060780` if its screens need it).
 
 ---
 
