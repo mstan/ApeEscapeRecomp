@@ -1,9 +1,21 @@
-# Ape Escape Recompiled — v0.0.4-alpha
+# Ape Escape Recompiled — v0.0.5-alpha
 
 Ape Escape boots from the real PlayStation BIOS and **plays** as a native
 Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## 🕹️ New in v0.0.5 — controls fix (phantom camera rotation)
+
+- **The camera no longer spins on its own, and the analog stick no longer
+  rotates it.** On a controller, pushing the left stick to move — or even a
+  slight stick centre-drift at rest — was also being read as D-pad left/right,
+  which Ape Escape uses to rotate the camera. So the camera drifted constantly
+  and swung whenever you moved. The left stick and the D-pad are now
+  independent, exactly like a real DualShock: the **left stick moves** (analog
+  only) and the **D-pad rotates the camera**. If your camera was rotating with
+  no input, this release is the fix. Settings and saves carry over. Thanks to
+  VGEsoterica for the report.
 
 ## 🛠️ New in v0.0.4 — critical boot fix
 

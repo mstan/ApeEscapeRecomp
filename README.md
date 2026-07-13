@@ -37,10 +37,11 @@ Important files:
 
 ## Status
 
-**Playable preview — `v0.0.3-alpha`.** Ape Escape **boots from the PS1 BIOS and
+**Playable preview — `v0.0.5-alpha`.** Ape Escape **boots from the PS1 BIOS and
 plays** — through the intro, the title, and into gameplay, with dual-analog
-controller input including **L3/R3 stick clicks** (added in v0.0.3), working
-memory-card **save/load** (fixed in v0.0.2), and **no known crashes**. It has not yet been verified all the way to the end,
+controller input including **L3/R3 stick clicks** (added in v0.0.3), a
+**controls fix** so the analog stick no longer spins the camera (v0.0.5),
+working memory-card **save/load** (fixed in v0.0.2), and **no known crashes**. It has not yet been verified all the way to the end,
 so treat it as a very playable preview rather than a certified full playthrough.
 
 | Area | State |

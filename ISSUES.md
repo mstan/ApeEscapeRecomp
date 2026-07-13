@@ -5,7 +5,10 @@ a native Windows program — through the intro, title, and gameplay, with dual-
 analog controller input. It has not yet been verified all the way to the end, so
 treat it as a very playable preview rather than a certified full playthrough.
 **Memory-card save/load now works** (issue #4 fixed in v0.0.2) — progress saves
-and loads back on standard `.mcd` images.
+and loads back on standard `.mcd` images. **Phantom camera rotation is fixed**
+(v0.0.5): the analog stick was doubling as the D-pad in analog mode, so stick
+movement and centre-drift spun the camera; the stick and D-pad are now
+independent as on real hardware.
 
 An **experimental 16:9 / 21:9 widescreen** mode is available in the launcher
 (off by default). It renders a genuinely wider field of view — the 3D world

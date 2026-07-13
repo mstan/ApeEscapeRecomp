@@ -1,23 +1,31 @@
-# 2026-07-10 (v0.0.4): Ape Escape builds against the shared framework master.
-# master now carries the CRITICAL release-install boot fix (e5a958f): the
-# dirty-RAM text-image guard arms from the boot EXE extracted off the user's
-# DISC image when no local EXE file exists. The v0.0.2/v0.0.3 zips could not
-# boot outside a dev checkout: the guard only armed from a loose local
-# apeescape/SCUS_944.23 found via a repo-marker walk, and without it the
-# game-start latch never fired, the shell-window shadow (RAM 0x30000-0x5AFFF
-# -> shell ROM) stayed over real game text, and the boot died in a jump to
-# PC=0 at frame 14 (both HLE and LLE). In-repo validation runs armed the
-# guard invisibly, which is how the broken zips shipped green. The fntrace
-# alternate game-start latch now also requires a registered image.
-# Everything from v0.0.3 (L3/R3 stick-click binds) carries forward.
+# 2026-07-13 (v0.0.5): analog-stick / D-pad decouple — phantom camera fix.
+# In analog pad mode the left analog stick was ALSO firing the digital D-pad
+# bits: the default input map folds leftx±/lefty± onto up/down/left/right so the
+# stick doubles as a D-pad for digital-only games. Ape Escape is locked to
+# analog and uses the D-pad L/R to rotate the camera, so stick movement — and
+# stick centre-drift past the deadzone — spun the camera with no input. The
+# framework now suppresses the left/right analog-stick axes as button sources
+# whenever the pad presents as analog, so the stick drives ONLY the analog axes
+# and the D-pad bits come solely from the physical D-pad (as on real hardware).
+# Class fix: every analog-mode title inherits it. Reported by VGEsoterica;
+# verified live on an Xbox Series X pad (camera holds still, stick moves cleanly,
+# physical D-pad still rotates).
 #
-# CODEGEN note: no regen for v0.0.4 (runtime-only fix; the packager
-# intentionally builds the validated generated/ as-is). The packaged zip was
-# verified booting to the game intro from a clean directory OUTSIDE any repo
-# (fresh-user simulation), guard "armed ... disc SCUS_944.23", on both HLE
-# and LLE boot paths; in-repo builds still arm from the local EXE.
+# PINNED OFF-MASTER (minimal, matches exactly what was validated): this is
+# v0.0.4's framework commit (e5a958f) plus ONLY the decouple fix. Framework
+# master has since advanced to other commits (audio-reserve hardening, GTE
+# threshold, overlay dispatch) that were NOT in this validated build, so we do
+# NOT chase master for this release. The fix still wants landing on master for
+# the other titles — tracked as a follow-up.
 #
-# RELEASE GATE (learned from v0.0.3): before publishing, ALWAYS extract the
-# packaged zip to a directory outside any git checkout and verify it boots.
-branch=master
-sha=e5a958f
+# CODEGEN note: BIOS regenerated from the PINNED emitter (e5a958f — 4439 dispatch
+# entries) so the runtime links a matching BIOS, NOT the newer master emitter's
+# 4406-entry output. Game C unchanged (runtime-only fix; the packager builds the
+# validated generated/ as-is). Everything from v0.0.4 (disc-image boot guard)
+# carries forward.
+#
+# RELEASE GATE (learned from v0.0.3): the packaged zip was extracted to a
+# directory OUTSIDE any git checkout and launched clean (launcher up, no crash),
+# and the controls fix was confirmed live on a physical Xbox Series X pad.
+branch=fix/analog-stick-dpad-decouple
+sha=8ce59f2
