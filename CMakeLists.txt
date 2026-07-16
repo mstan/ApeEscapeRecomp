@@ -35,6 +35,7 @@ include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
 recomp_target_launcher_ui(psx-runtime
     BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
     PAD    "${CMAKE_SOURCE_DIR}/recomp/launcher/pad.tga"
+    BRAND  "${CMAKE_SOURCE_DIR}/recomp/launcher/brand.tga"   # PlayStation shapes, not the SNES mark
 )
 
 # Per-game launcher art override. The framework copies its shared launcher assets
