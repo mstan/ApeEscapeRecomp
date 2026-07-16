@@ -1,9 +1,26 @@
-# Ape Escape Recompiled — v0.0.5-alpha
+# Ape Escape Recompiled — v0.0.6-alpha
 
 Ape Escape boots from the real PlayStation BIOS and **plays** as a native
 Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## ✨ New in v0.0.6 — brand-new launcher + widescreen fixes
+
+- **A completely redesigned launcher.** Ape Escape now uses the shared
+  [recomp-ui](https://github.com/mstan/recomp-ui) launcher — a PlayStation-themed
+  front-end that replaces the old one:
+  - **Real disc verification** — reads your disc's serial, region, and ISO header
+    and shows a clear verified / warn / wrong-disc verdict.
+  - **Memory cards** — per-slot enable, Browse an existing card or create a fresh
+    blank one, with a live block-usage grid reading your actual saves.
+  - **Deep display options** — aspect ratio (4:3 / 16:9 / 21:9), renderer,
+    supersampling, antialiasing (Off / 2× / 4× / 8×), screen model, frame
+    interpolation, and more.
+  - **Controllers** — analog / digital / hybrid pad modes and full keyboard
+    rebinding (all 24 inputs, including the analog-stick directions).
+- **Widescreen fixes.** The 16:9 / 21:9 path is back on Ape's stable projection
+  and the title-screen sky no longer tears. Widescreen remains experimental.
 
 ## 🕹️ New in v0.0.5 — controls fix (phantom camera rotation)
 
@@ -70,15 +87,15 @@ behind TombaRecomp and MegaManX6Recomp.
 Off by default — the game ships authentic 4:3. Turn it on in the launcher
 (**Widescreen — EXPERIMENTAL**). It renders a genuinely wider field of view:
 
-- The 3D world fills the wider frame (the render funnel and object screen-culls
-  are widened so geometry isn't clipped at the old 4:3 edge).
-- The HUD (item ring, ammo, radar) is re-anchored to the true wide corners.
-- A native-wide GL compositor optimization keeps it at a locked 60fps.
+- The 3D world fills the wider frame through Ape's stable
+  projection-and-stretch path.
+- The title's curved sky mesh fills the wide frame without affecting attract
+  demo geometry.
+- Ferris-wheel cabins remain visible throughout the amusement-park shot.
 - 21:9 is also available (a fully-3D title has no authored-parallax ceiling).
 
-Known rough edges on the widescreen path (4:3 is unaffected): the title/menu sky
-"dome" doesn't reach the far corners on a few screens, and some objects still
-pop in by distance or at the old edge. See `ISSUES.md`.
+Known rough edge on the widescreen path (4:3 is unaffected): very-wide views can
+still expose the game's original distance pop-in. See `ISSUES.md`.
 
 ## Notes
 

@@ -57,12 +57,11 @@ so treat it as a very playable preview rather than a certified full playthrough.
 ### Experimental widescreen
 
 An **experimental 16:9 / 21:9 mode** is available in the launcher (off by
-default; the game ships authentic 4:3). It renders a genuinely wider field of
-view — the 3D world fills the frame and the HUD is re-anchored to the true wide
-corners — with a native-wide compositor perf fix so it holds 60fps. A few rough
-edges remain on that path (title/menu sky corners, some distance/edge object
-pop-in); see [`ISSUES.md`](ISSUES.md). Regular 4:3 play is byte-for-byte the original
-presentation and is unaffected.
+default; the game ships authentic 4:3). It uses the stable GTE
+projection-and-stretch path for a wider 3D field of view. The title sky and
+ferris-wheel cabin regressions are fixed; the remaining very-wide draw-distance
+limitation is tracked in [`ISSUES.md`](ISSUES.md). Regular 4:3 play is
+byte-for-byte the original presentation and is unaffected.
 
 ## Playing
 

@@ -26,6 +26,18 @@ psxrecomp_add_runtime_target(psx-runtime
     EXE_NAME "ApeEscapeRecomp"
 )
 
+# Shared recomp-ui Dear ImGui launcher (prototype, feat/recomp-ui-launcher branch).
+# Wires in an alternate PSX-themed launcher UI (see main.cpp RECOMP_LAUNCHER gate)
+# instead of the framework's default RmlUi launcher. recomp-ui is vendored via a
+# directory junction (recomp-ui -> F:\Projects\recomp-ui) so this stays offline
+# and reproducible like everything else in this tree.
+include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
+recomp_target_launcher_ui(psx-runtime
+    BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
+    PAD    "${CMAKE_SOURCE_DIR}/recomp/launcher/pad.tga"
+    BRAND  "${CMAKE_SOURCE_DIR}/recomp/launcher/brand.tga"   # PlayStation shapes, not the SNES mark
+)
+
 # Per-game launcher art override. The framework copies its shared launcher assets
 # (img/disc.png etc. — the default is Tomba's disc) next to the exe inside
 # psxrecomp_add_runtime_target above; this copies this repo's launcher_art/ on top

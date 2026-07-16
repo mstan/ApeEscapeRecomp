@@ -41,45 +41,24 @@ renderer = "opengl"
 aspect_ratio = "4:3"
 
 [widescreen]
+# Offer both 16:9 and 21:9 in the launcher (Ape Escape is full-3D, ultrawide-friendly).
+offer_ultrawide = true
 # Ape Escape is fully 3D with no per-prim sprite-tag helper: gameplay frames
 # are detected by GTE activity (RTPS/RTPT projections per frame). Genuine
 # full-2D screens still pillarbox 4:3.
 gte_game_mode = true
 
-# Native-wide pushes the corner HUD (item ring, L2 binoculars, timer) out to
-# the true 16:9 edges instead of leaving it inset by the reveal margin.
-nw_hud_corners = true
+# Ape's established widescreen path (GTE projection squash + final stretch)
+# is stable across gameplay and attract demos. The newer native-wide compositor
+# produces severe geometry wedges here, so do not opt Ape into that path.
+native_wide = false
 
-# Stretch the full-frame 2D backdrop (title/menu sky gradient) to fill the wide
-# frame instead of pillarboxing it at the reveal margins. GTE-drawn gameplay
-# skies already fill; this catches the screen-space backdrop quads.
-nw_backdrop = true
-
-[widescreen.cull]
-# GTE render-funnel screen-extent reject widening. Ape's funnel tests
-# min/max SX against 0x181 (385 — its 368-wide display + slack) and SY against
-# 0xF1, in three idioms (signed min/max with a bare-bltz left edge, per-vertex
-# unsigned, and billboard center±halfwidth) — all auto-detected and widened
-# through psx_ws_cull_{sltiu,slti,bltz} (identity at 4:3). Ghidra-evidenced:
-# 17 slti + 14 sltiu funnel sites in the boot EXE (0x80018320..0x80071BA0).
-auto_screen_x = true
-screen_w_imms = ["0x181"]
-screen_h_imms = ["0xF1"]
-# 0x8004AB64 is an X-only billboard test (no height compare in its function,
-# so the auto-detector cannot qualify it) — widened explicitly.
-slti_sites = ["0x8004AB64"]
-
-# Per-OBJECT screen bounding-box cull (distinct from the per-vertex funnel
-# above). Each site is `addiu projX,+0x20 ; andi 0xffff ; sltiu ,0x1C1` — a
-# visibility window of screen-X in [-32, 417] that decides whether to draw a
-# whole object. 417 < the 16:9 wide edge (429), so objects in the reveal margin
-# (e.g. the amusement-park ferris-wheel cars) pop out. Widen both edges: the
-# addiu bias gets +psx_ws_x_margin (bias_sites), the sltiu window +2*margin
-# (range_sites); identity at 4:3. Ghidra-evidenced, 8 main-EXE sites.
-bias_sites  = ["0x80059d28", "0x800699f4", "0x8006ae04", "0x8006d87c",
-               "0x8006de40", "0x8006f14c", "0x8006f538", "0x80084430"]
-range_sites = ["0x80059d30", "0x800699fc", "0x8006ae0c", "0x8006d884",
-               "0x8006de44", "0x8006f150", "0x8006f540", "0x80084434"]
+[widescreen.dome]
+# The title sky is a finite 16x16 curved mesh. This is the exact JAL that
+# projects its grid vertices in the title overlay (return address 0x80136614).
+# Preserve only this producer's authored 4:3 projection before the final wide
+# stretch, without touching Spike or any other attract-demo geometry.
+call_sites = ["0x8013660C"]
 
 # Controller defaults. Ape Escape is a dual-analog title — the whole monkey-net /
 # movement scheme is built around the DualShock's two analog sticks, so the game
