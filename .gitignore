@@ -12,9 +12,14 @@
 *.zip
 
 # Local PlayStation assets (disc image, extracted boot EXE, memory cards)
+# Both forms: trailing-slash ignores the dir, no-slash ignores the junction
+# entry (worktrees link these as junctions to the main checkout).
 /apeescape/
+/apeescape
 /isos/
+/isos
 /saves/
+/saves
 
 # Shared-tool junction (lives in the parent psxrecomp tree, not vendored here).
 # Both forms: trailing-slash ignores the dir, no-slash ignores the junction entry.
