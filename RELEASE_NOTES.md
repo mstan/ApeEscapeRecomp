@@ -1,9 +1,26 @@
-# Ape Escape Recompiled — v0.0.5-alpha
+# Ape Escape Recompiled — v0.0.6-alpha
 
 Ape Escape boots from the real PlayStation BIOS and **plays** as a native
 Windows program with no emulator behind it, on the
 [PSXRecomp](https://github.com/mstan/psxrecomp) framework — the same pipeline
 behind TombaRecomp and MegaManX6Recomp.
+
+## ✨ New in v0.0.6 — brand-new launcher + widescreen fixes
+
+- **A completely redesigned launcher.** Ape Escape now uses the shared
+  [recomp-ui](https://github.com/mstan/recomp-ui) launcher — a PlayStation-themed
+  front-end that replaces the old one:
+  - **Real disc verification** — reads your disc's serial, region, and ISO header
+    and shows a clear verified / warn / wrong-disc verdict.
+  - **Memory cards** — per-slot enable, Browse an existing card or create a fresh
+    blank one, with a live block-usage grid reading your actual saves.
+  - **Deep display options** — aspect ratio (4:3 / 16:9 / 21:9), renderer,
+    supersampling, antialiasing (Off / 2× / 4× / 8×), screen model, frame
+    interpolation, and more.
+  - **Controllers** — analog / digital / hybrid pad modes and full keyboard
+    rebinding (all 24 inputs, including the analog-stick directions).
+- **Widescreen fixes.** The 16:9 / 21:9 path is back on Ape's stable projection
+  and the title-screen sky no longer tears. Widescreen remains experimental.
 
 ## 🕹️ New in v0.0.5 — controls fix (phantom camera rotation)
 

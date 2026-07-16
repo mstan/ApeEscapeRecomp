@@ -57,20 +57,18 @@ if (Test-Path (Join-Path $Root "README.md"))         { Copy-Item (Join-Path $Roo
 if (Test-Path (Join-Path $Root "LICENSE"))           { Copy-Item (Join-Path $Root "LICENSE") $Stage }
 if (Test-Path (Join-Path $Root "RELEASE_NOTES.md"))  { Copy-Item (Join-Path $Root "RELEASE_NOTES.md") $Stage }
 
-# Launcher assets (staged next to the exe by the PSX_LAUNCHER build).
-$LauncherRml = Join-Path $BuildPath "launcher.rml"
-if (-not (Test-Path $LauncherRml)) {
-    throw "Launcher assets missing at $BuildPath (no launcher.rml) -- was -DPSX_LAUNCHER=ON honored?"
+# Launcher assets: this build ships the shared recomp-ui Dear ImGui launcher
+# (RECOMP_LAUNCHER; see main.cpp + recomp-ui/recomp_ui.cmake), which loads from
+# <exe>/assets/ (fonts + img TGAs) staged next to the exe by
+# recomp_target_launcher_ui's POST_BUILD -- NOT the legacy RmlUi launcher.rml.
+$AssetsSrc = Join-Path $BuildPath "assets"
+if (-not (Test-Path (Join-Path $AssetsSrc "img"))) {
+    throw "recomp-ui launcher assets missing at $AssetsSrc -- was the recomp-ui launcher built (recomp-ui junction present)?"
 }
-Copy-Item $LauncherRml $Stage
-foreach ($dir in @("fonts","img")) {
-    $src = Join-Path $BuildPath $dir
-    if (-not (Test-Path $src)) { throw "Launcher asset dir missing: $src" }
-    Copy-Item -Recurse -Force $src (Join-Path $Stage $dir)
-}
-$fontCount = (Get-ChildItem (Join-Path $Stage "fonts") -Filter *.ttf -ErrorAction SilentlyContinue).Count
-$imgCount  = (Get-ChildItem (Join-Path $Stage "img") -Filter *.png -ErrorAction SilentlyContinue).Count
-Write-Host "Bundled launcher assets: launcher.rml + $fontCount font(s) + $imgCount image(s)"
+Copy-Item -Recurse -Force $AssetsSrc (Join-Path $Stage "assets")
+$fontCount = (Get-ChildItem (Join-Path $Stage "assets/fonts") -Filter *.ttf -ErrorAction SilentlyContinue).Count
+$imgCount  = (Get-ChildItem (Join-Path $Stage "assets/img")   -Filter *.tga -ErrorAction SilentlyContinue).Count
+Write-Host "Bundled recomp-ui launcher assets: $fontCount font(s) + $imgCount image(s)"
 
 # Player-facing game.toml: copy the REAL game.toml (the single source of truth
 # for all runtime/video/controller/widescreen config) minus the dev-only [audit]
