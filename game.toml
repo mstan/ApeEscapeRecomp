@@ -41,6 +41,8 @@ renderer = "opengl"
 aspect_ratio = "4:3"
 
 [widescreen]
+# Offer both 16:9 and 21:9 in the launcher (Ape Escape is full-3D, ultrawide-friendly).
+offer_ultrawide = true
 # Ape Escape is fully 3D with no per-prim sprite-tag helper: gameplay frames
 # are detected by GTE activity (RTPS/RTPT projections per frame). Genuine
 # full-2D screens still pillarbox 4:3.
