@@ -1,3 +1,24 @@
+# Framework pin history (historical)
+
+The `psxrecomp` framework used to be pinned via this hand-maintained
+`psxrecomp-v4.pin` file. That mechanism has been **replaced by a real git
+submodule**: the framework commit this repo builds against is now recorded as
+the `psxrecomp-v4` submodule pointer (see `.gitmodules`). Bump it the normal
+way:
+
+    git -C psxrecomp-v4 fetch && git -C psxrecomp-v4 checkout <new-sha>
+    git add psxrecomp-v4 && git commit -m "bump psxrecomp-v4 to <new-sha>"
+
+At migration time the pointer moved to master `d2006e0`, which supersedes the
+final pin below: the analog-stick / D-pad decouple fix that `8ce59f2` was pinned
+off-master for landed on master as `dde268d` (an ancestor of `d2006e0`), so the
+off-master pin is no longer needed.
+
+The notes below are kept only as a historical changelog of which framework
+build each ApeEscapeRecomp release was cut against.
+
+---
+
 # 2026-07-13 (v0.0.5): analog-stick / D-pad decouple — phantom camera fix.
 # In analog pad mode the left analog stick was ALSO firing the digital D-pad
 # bits: the default input map folds leftx±/lefty± onto up/down/left/right so the
@@ -27,5 +48,5 @@
 # RELEASE GATE (learned from v0.0.3): the packaged zip was extracted to a
 # directory OUTSIDE any git checkout and launched clean (launcher up, no crash),
 # and the controls fix was confirmed live on a physical Xbox Series X pad.
-branch=fix/analog-stick-dpad-decouple
-sha=8ce59f2
+# branch=fix/analog-stick-dpad-decouple
+# sha=8ce59f2

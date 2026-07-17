@@ -26,11 +26,11 @@ psxrecomp_add_runtime_target(psx-runtime
     EXE_NAME "ApeEscapeRecomp"
 )
 
-# Shared recomp-ui Dear ImGui launcher (prototype, feat/recomp-ui-launcher branch).
-# Wires in an alternate PSX-themed launcher UI (see main.cpp RECOMP_LAUNCHER gate)
-# instead of the framework's default RmlUi launcher. recomp-ui is vendored via a
-# directory junction (recomp-ui -> F:\Projects\recomp-ui) so this stays offline
-# and reproducible like everything else in this tree.
+# Shared recomp-ui Dear ImGui launcher. Wires in the PSX-themed launcher UI
+# (see main.cpp RECOMP_LAUNCHER gate) instead of the framework's default RmlUi
+# launcher. recomp-ui is a real git submodule (github.com/mstan/recomp-ui,
+# pinned via the recomp-ui gitlink); locally it is a directory junction to the
+# working checkout so builds stay offline and reproducible like everything else.
 include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
 recomp_target_launcher_ui(psx-runtime
     BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
