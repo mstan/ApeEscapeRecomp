@@ -33,6 +33,9 @@ overlay_backend = "auto"
 # replacing the previous overlay_captures.json snapshot. Development configs
 # may additionally opt into immutable project-local snapshots.
 overlay_capture_history = true
+# Development-only immutable snapshots: each coherent launch is copied to a
+# new signed file under this project-relative, gitignored directory.
+overlay_capture_persist_dir = ".aot_capture_history/SCUS-94423"
 
 [video]
 # Auto-skip FMVs: when a streaming movie (XA audio + MDEC) is detected, run it
