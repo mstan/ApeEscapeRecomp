@@ -22,7 +22,7 @@
   }
  },
  "static_quarantined_zero_ranges": [],
- "bios_dispatch": "F:\\Projects\\psxrecomp\\ApeEscapeRecomp\\psxrecomp-v4\\generated\\SCPH1001_dispatch.c",
+ "bios_dispatch": "F:\\Projects\\psxrecomp\\psxrecomp\\generated\\SCPH1001_dispatch.c",
  "bios_static_entries": 1314,
  "bios_static_ranges": 37,
  "live_addendum_audit": {

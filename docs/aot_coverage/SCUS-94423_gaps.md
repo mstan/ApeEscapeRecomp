@@ -2,7 +2,7 @@
 
 _How much of the played reference set did the play-free static extractor reproduce, and how much lies in compiled static code?_
 
-- Static shard cache: `F:\Projects\psxrecomp\ApeEscapeRecomp\build-aot\cache\SCUS-94423\gcc\win-x64\cg5_84eaacd4`
+- Disposable clean static shard cache: `SCUS-94423/gcc/win-x64/cg5_060368b2`
 - Static manifest entries: **2859**
 
 - Base BIOS native dispatch entries: **1314**; relocated kernel body ranges: **37**
