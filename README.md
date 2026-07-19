@@ -1,15 +1,18 @@
 # ApeEscapeRecomp
 
+> _Ape Escape Recompiled is a byproduct of developing **psxrecomp**, the
+> static-recompilation framework it's built on. Driving the framework forward is
+> the priority, so my time for this particular title is limited — I ask for your
+> patience with its continued development, and community contributions are warmly
+> welcomed._
+
 Ape Escape (USA, SCUS-94423) statically recompiled to a native PC executable
 with [PSXRecomp](https://github.com/mstan/psxrecomp) — the same framework behind
 [TombaRecomp](https://github.com/mstan/TombaRecomp) and
 [MegaManX6Recomp](https://github.com/mstan/MegaManX6Recomp).
 
-Ape Escape Recompiled is built with **psxrecomp**, a PlayStation
-static-recompilation toolkit that is actively in development. The project is
-maintained by a single volunteer developer spread across the whole ecosystem,
-and contributions are very welcome — both to psxrecomp itself and to refining
-specific games like Ape Escape. PRs are welcome on both. Known issues live in
+Contributions are welcome on both sides — to **psxrecomp** itself and to
+refining specific games like Ape Escape. Known issues live in
 [`ISSUES.md`](ISSUES.md).
 
 ## What This Is
