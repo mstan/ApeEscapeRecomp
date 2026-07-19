@@ -24,16 +24,6 @@ memcard_dir = "saves"
 # service the HLE tier doesn't implement. Env PSX_BIOS_HLE overrides at launch.
 bios_hle = true
 
-# Native AOT overlay cache. Static shards are preferred; uncovered code falls
-# back to the dirty-RAM interpreter and is captured for later offline analysis.
-overlay_cache = true
-overlay_backend = "auto"
-
-# Preserve every coherent launch contribution beside the executable instead of
-# replacing the previous overlay_captures.json snapshot. Development configs
-# may additionally opt into immutable project-local snapshots.
-overlay_capture_history = true
-
 [video]
 # Auto-skip FMVs: when a streaming movie (XA audio + MDEC) is detected, run it
 # uncapped and muted so it blows through in a fraction of a second instead of
