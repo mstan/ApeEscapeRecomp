@@ -9,8 +9,12 @@ set(PSXRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/psxrecomp-v4" CACHE PATH
 
 include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 
-set(GAME_GENERATED_FULL
-    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full.c")
+file(GLOB GAME_GENERATED_FULL CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full_*.c")
+if(NOT GAME_GENERATED_FULL)
+    set(GAME_GENERATED_FULL
+        "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full.c")
+endif()
 set(GAME_GENERATED_DISPATCH
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_dispatch.c")
 
@@ -31,12 +35,14 @@ psxrecomp_add_runtime_target(psx-runtime
 # launcher. recomp-ui is a real git submodule (github.com/mstan/recomp-ui,
 # pinned via the recomp-ui gitlink); locally it is a directory junction to the
 # working checkout so builds stay offline and reproducible like everything else.
-include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
-recomp_target_launcher_ui(psx-runtime
-    BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
-    PAD    "${CMAKE_SOURCE_DIR}/recomp/launcher/pad.tga"
-    BRAND  "${CMAKE_SOURCE_DIR}/recomp/launcher/brand.tga"   # PlayStation shapes, not the SNES mark
-)
+if(PSX_LAUNCHER)
+    include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
+    recomp_target_launcher_ui(psx-runtime
+        BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
+        PAD    "${CMAKE_SOURCE_DIR}/recomp/launcher/pad.tga"
+        BRAND  "${CMAKE_SOURCE_DIR}/recomp/launcher/brand.tga"   # PlayStation shapes, not the SNES mark
+    )
+endif()
 
 # Per-game launcher art override. The framework copies its shared launcher assets
 # (img/disc.png etc. — the default is Tomba's disc) next to the exe inside
