@@ -9,8 +9,15 @@ set(PSXRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/psxrecomp-v4" CACHE PATH
 
 include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 
-set(GAME_GENERATED_FULL
-    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full.c")
+# Current psxrecomp emits the large game translation unit as numbered shards.
+# Keep the monolithic fallback for older/generated source drops.
+file(GLOB GAME_GENERATED_FULL CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full_[0-9][0-9].c")
+list(SORT GAME_GENERATED_FULL)
+if(NOT GAME_GENERATED_FULL)
+    set(GAME_GENERATED_FULL
+        "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full.c")
+endif()
 set(GAME_GENERATED_DISPATCH
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_dispatch.c")
 

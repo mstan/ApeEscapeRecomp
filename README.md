@@ -62,9 +62,9 @@ so treat it as a very playable preview rather than a certified full playthrough.
 
 An **experimental 16:9 / 21:9 mode** is available in the launcher (off by
 default; the game ships authentic 4:3). It uses the stable GTE
-projection-and-stretch path for a wider 3D field of view. The title sky and
-ferris-wheel cabin regressions are fixed; the remaining very-wide draw-distance
-limitation is tracked in [`ISSUES.md`](ISSUES.md). Regular 4:3 play is
+projection-and-stretch path for a wider 3D field of view. UI proportion,
+character projection, and scene-culling regressions are still under active
+validation and are tracked in [`ISSUES.md`](ISSUES.md). Regular 4:3 play is
 byte-for-byte the original presentation and is unaffected.
 
 ## Playing
