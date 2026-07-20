@@ -39,11 +39,12 @@ auto_skip_fmv = true
 # GL compositor perf fix). The launcher's Renderer setting still offers Software.
 renderer = "opengl"
 
-# Quality soak (RTX/OpenGL, 1280-wide, 21:9) found these to be the only
-# performance-neutral defaults. Present antialiasing remains enabled; 2x SSAA
-# increases GPU frame time and bilinear filtering changes the authored PSX
-# texture look, so both remain opt-in.
-supersampling = 1
+# Ship 2x SSAA with present antialiasing enabled. Aligned RTX/OpenGL testing
+# found 2x and 4x stayed within the 59.94 Hz budget in the sampled attract
+# scene, but that is not yet a full-playthrough guarantee. 3x/4x SSAA and
+# bilinear texture filtering (which changes the authored PSX texture look)
+# remain opt-in.
+supersampling = 2
 antialiasing = true
 texture_filtering = "nearest"
 
