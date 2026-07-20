@@ -19,8 +19,9 @@ behind TombaRecomp and MegaManX6Recomp.
     interpolation, and more.
   - **Controllers** — analog / digital / hybrid pad modes and full keyboard
     rebinding (all 24 inputs, including the analog-stick directions).
-- **Widescreen fixes.** The 16:9 / 21:9 path is back on Ape's stable projection
-  and the title-screen sky no longer tears. Widescreen remains experimental.
+- **Widescreen remains experimental.** UI proportion, character projection,
+  and scene-culling regressions are being image-validated before this work is
+  promoted as a fix.
 
 ## 🕹️ New in v0.0.5 — controls fix (phantom camera rotation)
 

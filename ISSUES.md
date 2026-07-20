@@ -81,7 +81,7 @@ and Tomba (1).
 
 ---
 
-## #5 — Widescreen: HUD / UI elements are stretched — OPEN (root-caused)
+## #5 — Widescreen: HUD / UI elements are stretched — OPEN
 
 On the projection-and-stretch widescreen path, 3D geometry is squashed at GTE
 projection time so the final frame stretch restores its proportions. Screen-space
@@ -112,17 +112,12 @@ widescreen build.
   `0x8001A3xx` store loops) are **shared with world object rendering** — the
   HUD/world discrimination point is the orchestrator subtree, not the builders.
 
-**Fix design (framework class mechanism + per-game config, enhancement tier):**
-`[widescreen] hud_bracket_funcs` — (1) recompiler emits `psx_ws_hud_enter(cpu)`
-at entry of listed funcs (same emission pattern as `sprite_tag_funcs` /
-`unsquash_funcs`; regen required); (2) runtime bracket records guest (sp, ra)
-and the dispatcher closes it when pc==ra with sp restored (the existing
-(ra,sp)-contract pattern); (3) while bracketed, guest RAM stores mark a
-frame-stamped HUD packet-address hash (same table shape as the sprite tag);
-(4) gpu.c squashes tagged prims — polys and rects — around the existing
-`ws_hud_pivot` thirds-anchor; identity at 4:3 / unconfigured. Ape config:
-bracket `0x8005BF70` (verify pause-menu coverage at implementation time; add
-`0x80060780` if its screens need it).
+**Failed validation 2026-07-19.** Function-bracketing and packet-writer guesses
+did not cover the title screen, the four-button gadget UI, or all character
+draw paths. A 21:9 gameplay capture also showed squashed Spike and unacceptable
+scene gaps. Those per-game hooks are disabled. The replacement must distinguish
+GTE-projected geometry from screen-space UI at the submitted packet itself and
+must pass paired 4:3 / 16:9 / 21:9 image checks before this issue is closed.
 
 ---
 
