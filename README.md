@@ -67,6 +67,15 @@ character projection, and scene-culling regressions are still under active
 validation and are tracked in [`ISSUES.md`](ISSUES.md). Regular 4:3 play is
 byte-for-byte the original presentation and is unaffected.
 
+The launcher's Video page exposes **Supersampling (1x-4x)**,
+**Antialiasing**, and **Texture filtering**. On OpenGL, supersampling is true
+ordered-grid SSAA: geometry and shading are rasterized at a higher internal
+resolution and resolved to the window, while native PSX VRAM remains the
+authoritative game-visible buffer. Antialiasing controls the linear SSAA resolve
+and final presentation filtering; it is not RT64-style MSAA. Try **2x** first on
+a discrete GPU, keep texture filtering at **Nearest** for the authored PSX look,
+and return to 1x if a demanding scene misses full speed.
+
 ## Playing
 
 1. Run `ApeEscapeRecomp.exe`. A launcher window opens.

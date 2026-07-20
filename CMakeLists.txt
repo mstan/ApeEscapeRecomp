@@ -52,6 +52,10 @@ recomp_target_launcher_ui(psx-runtime
 # Escape's disc. img/disc.png is a generated PLACEHOLDER — drop official box/disc
 # art into launcher_art/img/ to replace it.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art")
+    file(GLOB_RECURSE APE_LAUNCHER_ART_FILES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art/*")
+    set_property(TARGET psx-runtime APPEND PROPERTY LINK_DEPENDS
+        ${APE_LAUNCHER_ART_FILES})
     add_custom_command(TARGET psx-runtime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art"
