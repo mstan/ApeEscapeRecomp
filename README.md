@@ -14,9 +14,7 @@ with [PSXRecomp](https://github.com/mstan/psxrecomp) — the same framework behi
 [TombaRecomp](https://github.com/mstan/TombaRecomp) and
 [MegaManX6Recomp](https://github.com/mstan/MegaManX6Recomp).
 
-Contributions are welcome on both sides — to **psxrecomp** itself and to
-refining specific games like Ape Escape. Known issues live in
-[`ISSUES.md`](ISSUES.md).
+Known issues live in [`ISSUES.md`](ISSUES.md).
 
 ## What This Is
 
