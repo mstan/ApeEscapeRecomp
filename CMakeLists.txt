@@ -28,37 +28,8 @@ psxrecomp_add_runtime_target(psx-runtime
     WINDOW_TITLE "ApeEscapeRecomp"
     DEFAULT_BIOS_PATH "${PSXRECOMP_ROOT}/bios/SCPH1001.BIN"
     DEFAULT_GAME_CONFIG_PATH "game.toml"
+    LAUNCHER_BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
     # Per-game executable name so each title's process is distinct (killing/
     # launching one title by name never hits another's running instance).
     EXE_NAME "ApeEscapeRecomp"
 )
-
-# Shared recomp-ui Dear ImGui launcher. Wires in the PSX-themed launcher UI
-# (see main.cpp RECOMP_LAUNCHER gate) instead of the framework's default RmlUi
-# launcher. recomp-ui is a real git submodule (github.com/mstan/recomp-ui,
-# pinned via the recomp-ui gitlink); locally it is a directory junction to the
-# working checkout so builds stay offline and reproducible like everything else.
-include("${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
-recomp_target_launcher_ui(psx-runtime
-    BOXART "${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga"
-    PAD    "${CMAKE_SOURCE_DIR}/recomp/launcher/pad.tga"
-    BRAND  "${CMAKE_SOURCE_DIR}/recomp/launcher/brand.tga"   # PlayStation shapes, not the SNES mark
-)
-
-# Per-game launcher art override. The framework copies its shared launcher assets
-# (img/disc.png etc. — the default is Tomba's disc) next to the exe inside
-# psxrecomp_add_runtime_target above; this copies this repo's launcher_art/ on top
-# AFTERWARD (POST_BUILD commands run in add order) so the launcher shows Ape
-# Escape's disc. img/disc.png is a generated PLACEHOLDER — drop official box/disc
-# art into launcher_art/img/ to replace it.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art")
-    file(GLOB_RECURSE APE_LAUNCHER_ART_FILES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art/*")
-    set_property(TARGET psx-runtime APPEND PROPERTY LINK_DEPENDS
-        ${APE_LAUNCHER_ART_FILES})
-    add_custom_command(TARGET psx-runtime POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/launcher_art"
-            "$<TARGET_FILE_DIR:psx-runtime>"
-        COMMENT "Overriding launcher art with ApeEscapeRecomp/launcher_art")
-endif()
