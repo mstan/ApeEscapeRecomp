@@ -18,6 +18,9 @@ strict = true
 debug_port = 4480
 window_title = "ApeEscapeRecomp"
 controller = "dualshock"
+# Ship the play-free AOT overlay cache beside the executable and keep runtime
+# capture/compilation enabled as a fail-safe for any producer the cache misses.
+overlay_cache = true
 memcard_dir = "saves"
 # HLE kernel-service tier + boot shell-skip (skip the BIOS boot animation and
 # jump straight into the game). LLE stays linked as the fallback/oracle for any
@@ -36,6 +39,15 @@ auto_skip_fmv = true
 # GL compositor perf fix). The launcher's Renderer setting still offers Software.
 renderer = "opengl"
 
+# Ship 2x SSAA with present antialiasing enabled. Aligned RTX/OpenGL testing
+# found 2x and 4x stayed within the 59.94 Hz budget in the sampled attract
+# scene, but that is not yet a full-playthrough guarantee. 3x/4x SSAA and
+# bilinear texture filtering (which changes the authored PSX texture look)
+# remain opt-in.
+supersampling = 2
+antialiasing = true
+texture_filtering = "nearest"
+
 # Widescreen ships OFF (authentic 4:3); the launcher's experimental Widescreen
 # toggle / settings.toml opts into 16:9 native-wide at runtime.
 aspect_ratio = "4:3"
@@ -53,12 +65,33 @@ gte_game_mode = true
 # produces severe geometry wedges here, so do not opt Ape into that path.
 native_wide = false
 
+# Correct small textured screen-space quads/rectangles before the final wide
+# presentation stretch. Large backdrop planes and projected/non-axis-aligned
+# world geometry are excluded; repeating glyph/icon rows share one anchor.
+auto_ui_squash = true
+
 [widescreen.dome]
 # The title sky is a finite 16x16 curved mesh. This is the exact JAL that
 # projects its grid vertices in the title overlay (return address 0x80136614).
 # Preserve only this producer's authored 4:3 projection before the final wide
 # stretch, without touching Spike or any other attract-demo geometry.
 call_sites = ["0x8013660C"]
+
+[widescreen.cull]
+# Ape's GTE render funnel uses 385x241 extent signatures. Widen only functions
+# containing both the horizontal and vertical signature; isolated compares are
+# left untouched.
+auto_screen_x = true
+screen_w_imms = ["0x181"]
+screen_h_imms = ["0xF1"]
+slti_sites = ["0x8004AB64"]
+
+# Object-level screen bounds used after the shared vertex funnel. These exact
+# guarded pairs were identified in the boot EXE; the hooks are identity at 4:3.
+bias_sites  = ["0x80059d28", "0x800699f4", "0x8006ae04", "0x8006d87c",
+               "0x8006de40", "0x8006f14c", "0x8006f538", "0x80084430"]
+range_sites = ["0x80059d30", "0x800699fc", "0x8006ae0c", "0x8006d884",
+               "0x8006de44", "0x8006f150", "0x8006f540", "0x80084434"]
 
 # Controller defaults. Ape Escape is a dual-analog title — the whole monkey-net /
 # movement scheme is built around the DualShock's two analog sticks, so the game
