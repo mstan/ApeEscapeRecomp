@@ -1,0 +1,27 @@
+format_version = 5
+id = "ape.enhancement.quick-gadget-select"
+version = "1.0.0"
+name = "Ape Escape Quick Gadget Select"
+author = "mthsk"
+description = "Backport of the Quick Gadget Switch feature from Ape Escape 2 and 3"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "quick-gadget-select"
+name = "Quick Gadget Select (Experimental)"
+description = "Press the equipped face button again to open the native-icon gadget row. Right-stick use or another face-button press commits."
+group = "Gameplay"
+default_enabled = false
+
+[[plugin]]
+feature = "quick-gadget-select"
+id = "ape.gadgets.quick-select"
+
+[[plugin]]
+feature = "quick-gadget-select"
+id = "ape.gadgets.quick-select-patches"
