@@ -10,12 +10,25 @@ stack_base = "0x801FFFF0"
 
 [recompiler]
 seeds = "seeds/ghidra_funcs.txt"
+# Pin the BIOS profile. Without this the recompiler probes one directory level
+# for any */bios/SCPH1001.toml and takes the FIRST sorted hit — which picks the
+# untracked leftover "_oldclone-psxrecomp-v4/" ('_' sorts before 'p') and fails
+# regen on its stale, now-rejected profile schema.
+bios_config = "psxrecomp-v4/bios/SCPH1001.toml"
 # bios_thunks = "seeds/apeescape_bios_thunks.txt"  # optional; add once BIOS thunks are inventoried
 out_dir = "generated"
 strict = true
 
 [runtime]
 debug_port = 4480
+turbo_loads = false
+# Load acceleration is mod-owned: players use "Fast Loading (host pacing)" /
+# "CD Speed" under Mods -> Quality of Life, both default-off. The generic switch
+# is retired in the framework, but this title still pins a framework that
+# predates that, where offer_turbo_loads IS honoured — without it, a turbo value
+# left in a stale settings.toml is restored on every launch and cannot be turned
+# off from any UI (the launcher draws no Turbo row). Remove once the pin moves.
+offer_turbo_loads = false
 window_title = "ApeEscapeRecomp"
 controller = "dualshock"
 # Ship the play-free AOT overlay cache beside the executable and keep runtime
@@ -219,6 +232,7 @@ anti_deadzone = 5376
 # ── Audit-specific config (consumed by psxrecomp-v4/tools/*.py and tests) ──
 # Schema mirrors psxrecomp-v4/bios/SCPH1001.toml. Paths are relative to the
 # project root.
+multitap_analog = false
 
 [audit]
 # Dynamic discovery — functions are found by walking control flow from
