@@ -2,18 +2,42 @@
 
 #include <stdint.h>
 
+/*
+ * Quick Gadget Select - backport of the Ape Escape 2/3 gadget row.
+ *
+ * A second press of the equipped face button opens a row of the unlocked
+ * gadgets drawn over the frame; further presses of the same button cycle the
+ * selection, and either right-stick use or a different face button commits.
+ *
+ * The guest-code half of this feature (suppressing the stock slingshot ammo
+ * cycle, which claims the same second press) is NOT here: it is a declarative
+ * [[patch]] in the package manifest. Activation callbacks run before the guest
+ * boots, so a psx_mod_write_code_word() from one would be overwritten by the
+ * game's own EXE load.
+ */
+
+/* Guest addresses. Everything below 0x800B5000 is inside the boot EXE image
+ * (game.toml: load_address 0x80010000, text_size 0xA5000); the rest is BSS.
+ * APE_HELD_GADGET_ADDRESS is confirmed by the stock slingshot block that the
+ * manifest patch rewrites: `lui v0,0x800F` / `lb v1,-0x3D2E(v0)`. */
 static const uint32_t APE_TRANSITION_PHASE_ADDRESS = 0x800F447Cu;
+/* Game-side pad shadow. Byte order follows the DualShock report: the two
+ * digital button bytes, then right X, then right Y. */
 static const uint32_t APE_PAD_LOW_INPUT_ADDRESS = 0x800B87A2u;
 static const uint32_t APE_FACE_INPUT_ADDRESS = 0x800B87A3u;
-static const uint32_t APE_RIGHT_STICK_Y_ADDRESS = 0x800B87A4u;
-static const uint32_t APE_RIGHT_STICK_X_ADDRESS = 0x800B87A5u;
+static const uint32_t APE_RIGHT_STICK_X_ADDRESS = 0x800B87A4u;
+static const uint32_t APE_RIGHT_STICK_Y_ADDRESS = 0x800B87A5u;
+/* Four bytes per gadget: u, v, then the 16-bit CLUT id. */
 static const uint32_t APE_GADGET_ICON_TABLE_ADDRESS = 0x800B2254u;
 static const uint32_t APE_PLAYER_IDLE_COUNTER_ADDRESS = 0x800EC328u;
-static const uint32_t APE_SLINGSHOT_FACE_AMMO_BLOCK_ADDRESS = 0x80063B6Cu;
+/* Four bytes, one gadget id per face-button slot. */
 static const uint32_t APE_GADGET_SLOT_BASE = 0x800F51A8u;
 static const uint32_t APE_HELD_GADGET_ADDRESS = 0x800EC2D2u;
+/* Bit per gadget. */
 static const uint32_t APE_UNLOCKED_GADGETS_ADDRESS = 0x800F51C4u;
+
 static const uint32_t PSX_GPU_GP0_ADDRESS = 0x1F801810u;
+static const uint32_t PSX_GPU_GPUSTAT_ADDRESS = 0x1F801814u;
 
 enum {
     APE_TRANSITION_PLAYING = 0x03u,
@@ -35,13 +59,17 @@ enum {
     APE_RIGHT_STICK_DEADZONE = 28,
     APE_IDLE_COUNTER_TRIGGER = 901u,
 
-    APE_DISABLE_SLINGSHOT_FACE_AMMO_INSTRUCTION = 0x08018F7Cu,
-
-    APE_ROW_RIGHT = 316,
+    /* Right edge of the row in the game's own draw coordinates at 4:3; the
+     * widescreen reveal is added at draw time. */
+    APE_ROW_RIGHT_4_3 = 316,
+    APE_ROW_MARGIN = 4,
     APE_ROW_Y = 5,
     APE_ICON_SIZE = 32,
     APE_TILE_GAP = 2,
-    APE_TILE_STEP = APE_ICON_SIZE + APE_TILE_GAP
+    APE_TILE_STEP = APE_ICON_SIZE + APE_TILE_GAP,
+
+    /* Texture page holding the gadget icons: 4bpp at (896, 256), dithered. */
+    APE_ICON_TEXPAGE = 0x021Eu
 };
 
 static uint8_t g_previous_face_buttons;
@@ -54,12 +82,18 @@ static uint8_t g_snapshot_slots[APE_FACE_SLOT_COUNT];
 static uint8_t g_snapshot_held_gadget = APE_INVALID_GADGET;
 static uint8_t g_snapshot_valid;
 
-static uint16_t ape_read_half(uint32_t address) {
-    const uint16_t low = psx_mod_read_byte(address);
-    const uint16_t high = psx_mod_read_byte(address + 1u);
-    return (uint16_t)(low | (uint16_t)(high << 8u));
-}
-
+/*
+ * Last guest state this plugin wrote. Plugin statics are not part of a save
+ * state, so a restore (or a rewind step, which does the same thing many times
+ * a second) can replace guest RAM underneath an open row and leave the
+ * snapshot describing an abandoned timeline. Writing that snapshot back would
+ * corrupt the restored save. Every write records what it left behind; each
+ * frame re-checks it, and any mismatch abandons the snapshot without writing.
+ * This also covers the game itself reassigning gadgets.
+ */
+static uint8_t g_expected_slots[APE_FACE_SLOT_COUNT];
+static uint8_t g_expected_held_gadget;
+static uint8_t g_expected_valid;
 
 static uint8_t ape_pressed_face_buttons(void) {
     return (uint8_t)(~psx_mod_read_byte(APE_FACE_INPUT_ADDRESS) & APE_FACE_MASK);
@@ -75,6 +109,8 @@ static int ape_axis_is_active(uint32_t address, int deadzone) {
     return value < -deadzone || value > deadzone;
 }
 
+/* Needs an analog pad. On a D-Pad controller this stays false and the row is
+ * committed with another face button instead. */
 static int ape_right_stick_is_active(void) {
     return ape_axis_is_active(APE_RIGHT_STICK_X_ADDRESS,
                               APE_RIGHT_STICK_DEADZONE) ||
@@ -82,9 +118,8 @@ static int ape_right_stick_is_active(void) {
                               APE_RIGHT_STICK_DEADZONE);
 }
 
-
 static int ape_is_entering_idle(void) {
-    return ape_read_half(APE_PLAYER_IDLE_COUNTER_ADDRESS) >=
+    return psx_mod_read_half(APE_PLAYER_IDLE_COUNTER_ADDRESS) >=
            APE_IDLE_COUNTER_TRIGGER;
 }
 
@@ -125,6 +160,31 @@ static uint8_t ape_read_slot(uint8_t slot) {
 
 static void ape_write_slot(uint8_t slot, uint8_t gadget) {
     psx_mod_write_byte(APE_GADGET_SLOT_BASE + (uint32_t)slot, gadget);
+}
+
+/* Record the guest state this plugin has just finished writing. */
+static void ape_record_expected_state(void) {
+    uint8_t slot;
+    for (slot = 0u; slot < APE_FACE_SLOT_COUNT; ++slot)
+        g_expected_slots[slot] = ape_read_slot(slot);
+    g_expected_held_gadget = psx_mod_read_byte(APE_HELD_GADGET_ADDRESS);
+    g_expected_valid = 1u;
+}
+
+static void ape_forget_expected_state(void) {
+    g_expected_valid = 0u;
+}
+
+/* False once guest RAM stops matching what this plugin left there. */
+static int ape_state_is_continuous(void) {
+    uint8_t slot;
+    if (!g_expected_valid)
+        return 1;
+    for (slot = 0u; slot < APE_FACE_SLOT_COUNT; ++slot) {
+        if (ape_read_slot(slot) != g_expected_slots[slot])
+            return 0;
+    }
+    return psx_mod_read_byte(APE_HELD_GADGET_ADDRESS) == g_expected_held_gadget;
 }
 
 static int ape_slot_value_is_valid(uint8_t gadget) {
@@ -204,6 +264,15 @@ static void ape_close_quick_select_state(void) {
     g_quick_selected_gadget = APE_INVALID_GADGET;
 }
 
+/* Drop an open row without writing anything to the guest. Used when the world
+ * changed underneath the snapshot and restoring it would be corruption. */
+static void ape_abandon_quick_select(void) {
+    ape_discard_snapshot();
+    ape_close_quick_select_state();
+    ape_forget_expected_state();
+    g_last_face_button = 0u;
+}
+
 static void ape_apply_snapshot_swap(uint8_t gadget);
 
 static void ape_commit_quick_select(uint8_t replacement_face_button) {
@@ -221,6 +290,8 @@ static void ape_commit_quick_select(uint8_t replacement_face_button) {
 
     ape_discard_snapshot();
     ape_close_quick_select_state();
+    /* The committed layout is now the game's own; stop tracking it. */
+    ape_forget_expected_state();
 }
 
 static void ape_cancel_quick_select(uint8_t replacement_face_button) {
@@ -245,16 +316,15 @@ static void ape_cancel_quick_select(uint8_t replacement_face_button) {
 
     ape_discard_snapshot();
     ape_close_quick_select_state();
+    ape_forget_expected_state();
 }
 
 static void ape_reset_quick_select_state(uint8_t pressed_face_buttons,
                                          int restore_snapshot) {
     if (restore_snapshot)
         ape_cancel_quick_select(0u);
-    else {
-        ape_discard_snapshot();
-        ape_close_quick_select_state();
-    }
+    else
+        ape_abandon_quick_select();
     g_previous_face_buttons = pressed_face_buttons;
     g_last_face_button = 0u;
 }
@@ -318,9 +388,8 @@ static void ape_gpu_native_gadget_icon(uint8_t gadget, int x, int y) {
         APE_GADGET_ICON_TABLE_ADDRESS + (uint32_t)gadget * 4u;
     const uint8_t u = psx_mod_read_byte(descriptor);
     const uint8_t v = psx_mod_read_byte(descriptor + 1u);
-    const uint16_t clut = ape_read_half(descriptor + 2u);
+    const uint16_t clut = psx_mod_read_half(descriptor + 2u);
 
-    psx_mod_write_word(PSX_GPU_GP0_ADDRESS, 0xE100021Eu);
     psx_mod_write_word(PSX_GPU_GP0_ADDRESS, 0x65000000u);
     psx_mod_write_word(PSX_GPU_GP0_ADDRESS,
                        ((uint32_t)(uint16_t)y << 16u) |
@@ -338,6 +407,13 @@ static void ape_draw_quick_select_row(uint8_t unlocked, uint8_t selected) {
     const uint32_t normal_border = ape_gpu_color(78u, 84u, 96u);
     const uint32_t selected_border = ape_gpu_color(255u, 226u, 90u);
     const uint32_t icon_background = ape_gpu_color(24u, 27u, 35u);
+    /* Per-side widescreen reveal, zero at 4:3: keep the row against the real
+     * right edge of the visible frame rather than the 4:3 one. */
+    const int32_t reveal = psx_mod_widescreen_x_margin();
+    const int row_right = APE_ROW_RIGHT_4_3 + (int)reveal;
+    const int row_left_limit = APE_ROW_MARGIN - (int)reveal;
+    uint32_t saved_gpustat;
+    uint32_t saved_texpage;
     uint8_t count = 0u;
     uint8_t gadget;
     int total_width;
@@ -352,9 +428,28 @@ static void ape_draw_quick_select_row(uint8_t unlocked, uint8_t selected) {
 
     total_width = (int)count * APE_ICON_SIZE +
                   ((int)count - 1) * APE_TILE_GAP;
-    x = APE_ROW_RIGHT - total_width;
-    if (x < 4)
-        x = 4;
+    x = row_right - total_width;
+    if (x < row_left_limit)
+        x = row_left_limit;
+
+    /*
+     * GPU state. The drawing offset, drawing area and mask settings are
+     * deliberately left as the game set them: this runs on the guest VBlank
+     * tick, before the game's own VBlank handler flips, so inheriting the
+     * offset is what places the row in the buffer that is about to become
+     * visible. Setting our own would put it in the wrong half of VRAM.
+     *
+     * The texture page and texture window are different - they are ours to
+     * set, because a leftover texture window would wrap the icon UVs. GPUSTAT
+     * bits 0..10 mirror the texture page, so it can be put back; the texture
+     * window has no readback and is left cleared. That is safe here because
+     * the game re-establishes both from its own ordering table at the top of
+     * every frame, and nothing else draws between this row and that.
+     */
+    saved_gpustat = psx_mod_read_word(PSX_GPU_GPUSTAT_ADDRESS);
+    saved_texpage = saved_gpustat & 0x7FFu;
+    psx_mod_write_word(PSX_GPU_GP0_ADDRESS, 0xE2000000u);
+    psx_mod_write_word(PSX_GPU_GP0_ADDRESS, 0xE1000000u | APE_ICON_TEXPAGE);
 
     ape_gpu_rect(x - 3, APE_ROW_Y - 3, total_width + 6,
                  APE_ICON_SIZE + 6, row_background);
@@ -378,6 +473,8 @@ static void ape_draw_quick_select_row(uint8_t unlocked, uint8_t selected) {
 
         x += APE_TILE_STEP;
     }
+
+    psx_mod_write_word(PSX_GPU_GP0_ADDRESS, 0xE1000000u | saved_texpage);
 }
 
 static void ape_apply_snapshot_swap(uint8_t gadget) {
@@ -398,6 +495,7 @@ static void ape_apply_snapshot_swap(uint8_t gadget) {
 
     ape_write_slot(selected_slot, gadget);
     psx_mod_write_byte(APE_HELD_GADGET_ADDRESS, gadget);
+    ape_record_expected_state();
 }
 
 static void ape_preview_gadget(uint8_t gadget) {
@@ -419,6 +517,7 @@ static void ape_open_quick_select(uint8_t face_button, uint8_t gadget) {
     g_quick_select_active = 1u;
     g_quick_face_button = face_button;
     g_quick_selected_gadget = gadget;
+    ape_record_expected_state();
 }
 
 static int ape_cancel_for_idle(void) {
@@ -436,6 +535,16 @@ static void ape_quick_gadget_select_vblank(void) {
 
     if (!psx_mod_game_started()) {
         ape_reset_quick_select_state(0u, 0);
+        return;
+    }
+
+    /* Before anything reads or writes gadget state: if guest RAM no longer
+     * matches what this plugin last wrote, a save state, a rewind or the game
+     * itself replaced it. The snapshot describes a timeline that no longer
+     * exists, so drop it silently instead of writing it back. */
+    if (g_quick_select_active && !ape_state_is_continuous()) {
+        ape_abandon_quick_select();
+        g_previous_face_buttons = ape_pressed_face_buttons();
         return;
     }
 
@@ -501,16 +610,7 @@ static void ape_quick_gadget_select_vblank(void) {
     }
 }
 
-static void ape_quick_gadget_select_activation(void) {
-    psx_mod_write_code_word(
-        APE_SLINGSHOT_FACE_AMMO_BLOCK_ADDRESS,
-        APE_DISABLE_SLINGSHOT_FACE_AMMO_INSTRUCTION);
-}
-
 PSX_MOD_CONSTRUCTOR(ape_register_quick_gadget_select_plugin) {
-    (void)psx_mod_register_activation_plugin(
-        "ape.gadgets.quick-select-patches",
-        ape_quick_gadget_select_activation);
     (void)psx_mod_register_vblank_plugin(
         "ape.gadgets.quick-select", ape_quick_gadget_select_vblank);
 }

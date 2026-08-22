@@ -14,14 +14,37 @@ disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
 [[feature]]
 id = "quick-gadget-select"
 name = "Quick Gadget Select (Experimental)"
-description = "Press the equipped face button again to open the native-icon gadget row. Right-stick use or another face-button press commits."
+description = "Press the equipped face button again to open the native-icon gadget row. Right-stick use or another face-button press commits. The right-stick commit needs an analog pad; on a D-Pad controller commit with another face button."
 group = "Gameplay"
 default_enabled = false
+
+# Stock code cycles slingshot ammo when the slingshot's own face button is
+# pressed again, which is precisely the second press this feature claims for
+# opening the gadget row. Replace the head of that block with a jump to the
+# block's own not-the-slingshot fall-through:
+#
+#   80063B68  lui  v0, 0x800F
+#   80063B6C  lb   v1, -0x3D2E(v0)   ; v1 = held gadget (0x800EC2D2)  <-- patched
+#   80063B70  li   v0, 4             ; (harmless in the new delay slot)
+#   80063B74  bne  v1, v0, +0x9E     ; -> 0x80063DF0 when not the slingshot
+#
+# 0x08018F7C is `j 0x80063DF0`, i.e. unconditionally take the branch the
+# comparison would have taken for every other gadget.
+#
+# This is a declarative patch rather than a psx_mod_write_code_word() call in an
+# activation plugin on purpose: activation callbacks run before the guest boots
+# (runtime/src/main.cpp, ahead of SDL_Init and the run loop), so the game's own
+# EXE load would overwrite the write. Declarative main_exe patches are applied
+# at first dispatch of the entry PC and reapplied after a savestate restore,
+# both behind the expected-byte guard below.
+[[patch]]
+feature = "quick-gadget-select"
+target = "main_exe"
+address = 2147892076
+expected = "D2C24380"
+replace = "7C8F0108"
+order = 0
 
 [[plugin]]
 feature = "quick-gadget-select"
 id = "ape.gadgets.quick-select"
-
-[[plugin]]
-feature = "quick-gadget-select"
-id = "ape.gadgets.quick-select-patches"
