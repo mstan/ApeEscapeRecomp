@@ -21,8 +21,13 @@
  * APE_HELD_GADGET_ADDRESS is confirmed by the stock slingshot block that the
  * manifest patch rewrites: `lui v0,0x800F` / `lb v1,-0x3D2E(v0)`. */
 static const uint32_t APE_TRANSITION_PHASE_ADDRESS = 0x800F447Cu;
-/* Game-side pad shadow. Byte order follows the DualShock report: the two
- * digital button bytes, then right X, then right Y. */
+/* Game-side pad shadow. It starts at the controller's reply header, so the
+ * layout is: id, 0x5A, the two digital button bytes, then -- and only when the
+ * id says DualShock -- right X, right Y, left X, left Y. Measured live at the
+ * title screen and in the attract demo with no pad attached: 41 5A FF FF 00 00,
+ * i.e. a DIGITAL pad, where the axis bytes are not part of the report at all.
+ * That is why the axes must never be read without checking the id first. */
+static const uint32_t APE_PAD_ID_ADDRESS = 0x800B87A0u;
 static const uint32_t APE_PAD_LOW_INPUT_ADDRESS = 0x800B87A2u;
 static const uint32_t APE_FACE_INPUT_ADDRESS = 0x800B87A3u;
 static const uint32_t APE_RIGHT_STICK_X_ADDRESS = 0x800B87A4u;
@@ -45,6 +50,9 @@ enum {
     APE_TRANSITION_LOADED = 0x05u,
 
     APE_PAD_START = 0x08u,
+
+    /* Controller reply id: 0x41 digital, 0x73 DualShock. */
+    APE_PAD_ID_ANALOG = 0x73u,
 
     APE_FACE_TRIANGLE = 0x10u,
     APE_FACE_CIRCLE = 0x20u,
@@ -109,9 +117,21 @@ static int ape_axis_is_active(uint32_t address, int deadzone) {
     return value < -deadzone || value > deadzone;
 }
 
-/* Needs an analog pad. On a D-Pad controller this stays false and the row is
- * committed with another face button instead. */
+/*
+ * Only a DualShock report carries stick axes. On a digital pad the axis bytes
+ * are outside the reply and read 0x00, which is a full deflection away from the
+ * 0x80 centre -- so reading them unguarded reports the stick as permanently
+ * active, and the row would commit on the very frame it opened. Check the id
+ * first and fail closed: without an analog pad the row is committed with
+ * another face button instead.
+ */
+static int ape_pad_is_analog(void) {
+    return psx_mod_read_byte(APE_PAD_ID_ADDRESS) == APE_PAD_ID_ANALOG;
+}
+
 static int ape_right_stick_is_active(void) {
+    if (!ape_pad_is_analog())
+        return 0;
     return ape_axis_is_active(APE_RIGHT_STICK_X_ADDRESS,
                               APE_RIGHT_STICK_DEADZONE) ||
            ape_axis_is_active(APE_RIGHT_STICK_Y_ADDRESS,
