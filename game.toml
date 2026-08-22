@@ -21,14 +21,6 @@ strict = true
 
 [runtime]
 debug_port = 4480
-turbo_loads = false
-# Load acceleration is mod-owned: players use "Fast Loading (host pacing)" /
-# "CD Speed" under Mods -> Quality of Life, both default-off. The generic switch
-# is retired in the framework, but this title still pins a framework that
-# predates that, where offer_turbo_loads IS honoured — without it, a turbo value
-# left in a stale settings.toml is restored on every launch and cannot be turned
-# off from any UI (the launcher draws no Turbo row). Remove once the pin moves.
-offer_turbo_loads = false
 window_title = "ApeEscapeRecomp"
 controller = "dualshock"
 # Ship the play-free AOT overlay cache beside the executable and keep runtime
