@@ -67,9 +67,9 @@ enum {
     APE_RIGHT_STICK_DEADZONE = 28,
     APE_IDLE_COUNTER_TRIGGER = 901u,
 
-    /* Right edge of the row in the game's own draw coordinates at 4:3; the
-     * widescreen reveal is added at draw time. */
-    APE_ROW_RIGHT_4_3 = 316,
+    /* Gap kept between the row and the edges of the picture. The right edge
+     * itself comes from psx_mod_display_width() at draw time: Ape Escape
+     * scans out 384, not the 320 a fixed constant would assume. */
     APE_ROW_MARGIN = 4,
     APE_ROW_Y = 5,
     APE_ICON_SIZE = 32,
@@ -427,11 +427,17 @@ static void ape_draw_quick_select_row(uint8_t unlocked, uint8_t selected) {
     const uint32_t normal_border = ape_gpu_color(78u, 84u, 96u);
     const uint32_t selected_border = ape_gpu_color(255u, 226u, 90u);
     const uint32_t icon_background = ape_gpu_color(24u, 27u, 35u);
-    /* Per-side widescreen reveal, zero at 4:3: keep the row against the real
-     * right edge of the visible frame rather than the 4:3 one. */
+    /*
+     * Where the picture actually ends. The width is whatever the guest is
+     * scanning out right now -- Ape Escape uses 368-mode and scans out 384,
+     * so anything derived from an assumed 320 puts the row well short of the
+     * edge. The widescreen reveal, zero at 4:3, extends the picture by that
+     * much on each side on top of it.
+     */
+    const uint32_t display_width = psx_mod_display_width();
     const int32_t reveal = psx_mod_widescreen_x_margin();
-    const int row_right = APE_ROW_RIGHT_4_3 + (int)reveal;
-    const int row_left_limit = APE_ROW_MARGIN - (int)reveal;
+    int row_right;
+    int row_left_limit;
     uint32_t saved_gpustat;
     uint32_t saved_texpage;
     uint8_t count = 0u;
@@ -445,6 +451,12 @@ static void ape_draw_quick_select_row(uint8_t unlocked, uint8_t selected) {
     }
     if (count == 0u)
         return;
+    /* No geometry yet: wait rather than draw the row in a guessed place. */
+    if (display_width == 0u)
+        return;
+
+    row_right = (int)display_width + (int)reveal - APE_ROW_MARGIN;
+    row_left_limit = APE_ROW_MARGIN - (int)reveal;
 
     total_width = (int)count * APE_ICON_SIZE +
                   ((int)count - 1) * APE_TILE_GAP;
