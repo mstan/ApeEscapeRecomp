@@ -1,9 +1,15 @@
 # Ape Escape Recompiled - Unreleased
 
-- Removes the bundled Frame Rate / temporal frame-blending mod while issue #3
-  is unresolved. Stock gameplay remains unchanged; the removed package was
-  default-off but could freeze above 60 Hz and did not provide true in-between
-  motion.
+- Replaces the removed Frame Rate package with default-off **Ape Escape Frame
+  Smoothing**. Its display / 120 / 144 / 165 presents-per-second modes perform
+  temporal blending while guest simulation, timers, VBlank, and audio remain
+  stock. It is explicitly not motion-vector frame generation.
+- Reworks the framework presenter so temporal blends, OpenGL driver waits, and
+  `SDL_GL_SwapWindow` stay on the renderer's original thread and context. The
+  previous shared-context presentation thread and its swap mutex are no longer
+  used; no application mutex spans pacing, GL work, or swap.
+- Adds cadence, context-ownership, default-off resolver, and package-layout
+  coverage for the replacement.
 
 ---
 
@@ -28,7 +34,7 @@ release-tested PSXRecomp stack.
   Gadget Select.
 - Updates recomp-ui to the latest launcher fixes, including small-display
   window fitting and current mod-page behavior.
-- The Windows package now ships Ape's three title-specific mod packages beside
+- The Windows package now ships Ape's four title-specific mod packages beside
   the current framework-owned PSX mod catalog.
 
 ---

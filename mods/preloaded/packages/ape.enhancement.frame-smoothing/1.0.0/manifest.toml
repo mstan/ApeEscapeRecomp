@@ -1,0 +1,64 @@
+format_version = 5
+id = "ape.enhancement.frame-smoothing"
+version = "1.0.0"
+name = "Ape Escape Frame Smoothing"
+author = "mstan"
+description = "Presentation-only temporal blending on the renderer's original thread and OpenGL context. Game logic, timers, and audio remain stock."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "temporal-blending"
+name = "Temporal Frame Blending"
+description = "Crossfade completed frames at a higher presentation cadence. This does not use motion vectors or create true in-between object positions."
+group = "Frame Rate"
+default_enabled = false
+
+[[option]]
+feature = "temporal-blending"
+id = "rate"
+label = "Presentation rate"
+description = "Follow the display for even cadence, or select a fixed output rate. Requires OpenGL; guest simulation remains at its original speed."
+group = "Frame Rate"
+type = "choice"
+default = "display"
+
+[[option.choice]]
+value = "display"
+label = "Display refresh (Recommended)"
+
+[[option.choice]]
+value = "120"
+label = "120 presents/s"
+
+[[option.choice]]
+value = "144"
+label = "144 presents/s"
+
+[[option.choice]]
+value = "165"
+label = "165 presents/s"
+
+[[plugin]]
+feature = "temporal-blending"
+id = "ape.frame-smoothing.display"
+when = { rate = "display" }
+
+[[plugin]]
+feature = "temporal-blending"
+id = "ape.frame-smoothing.120"
+when = { rate = "120" }
+
+[[plugin]]
+feature = "temporal-blending"
+id = "ape.frame-smoothing.144"
+when = { rate = "144" }
+
+[[plugin]]
+feature = "temporal-blending"
+id = "ape.frame-smoothing.165"
+when = { rate = "165" }

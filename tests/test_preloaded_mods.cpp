@@ -46,13 +46,17 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 3) return fail("expected three package manifests");
+    if (manifest_count != 4) return fail("expected four package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
              "ape.widescreen.16-9",
              "ape.widescreen.21-9",
              "ape.widescreen.adaptive",
+             "ape.frame-smoothing.display",
+             "ape.frame-smoothing.120",
+             "ape.frame-smoothing.144",
+             "ape.frame-smoothing.165",
              "ape.fmv.skip",
              "ape.gadgets.quick-select"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
@@ -63,8 +67,8 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 3)
-        return fail("expected three package families");
+    if (manager.packages().size() != 4)
+        return fail("expected four package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -99,6 +103,32 @@ int main(int argc, char** argv) {
 
     if (!manager.set_feature_enabled(
             "ape.enhancement.widescreen", "widescreen", false, &error) ||
+        !manager.set_feature_enabled(
+            "ape.enhancement.frame-smoothing", "temporal-blending",
+            true, &error)) {
+        return fail(error);
+    }
+    for (const auto& [choice, plugin] :
+         {std::pair{"display", "ape.frame-smoothing.display"},
+          std::pair{"120", "ape.frame-smoothing.120"},
+          std::pair{"144", "ape.frame-smoothing.144"},
+          std::pair{"165", "ape.frame-smoothing.165"}}) {
+        if (!manager.set_feature_option(
+                "ape.enhancement.frame-smoothing", "temporal-blending",
+                "rate", choice, &error)) {
+            return fail(error);
+        }
+        const auto smoothing_plan = manager.resolve(kGameId, "", kDiscSha256);
+        if (!smoothing_plan.ok || !smoothing_plan.writes.empty() ||
+            smoothing_plan.plugins.size() != 1 ||
+            smoothing_plan.plugins.front().id != plugin) {
+            return fail(std::string("wrong frame-smoothing plan for ") + choice);
+        }
+    }
+
+    if (!manager.set_feature_enabled(
+            "ape.enhancement.frame-smoothing", "temporal-blending",
+            false, &error) ||
         !manager.set_feature_enabled(
             "ape.enhancement.quick-gadget-select", "quick-gadget-select",
             true, &error)) {
@@ -141,8 +171,10 @@ int main(int argc, char** argv) {
         return fail("Quick Gadget Select patched guest code while disabled");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 3 packages, "
-                 "3 widescreen choices, Skip FMVs migrated from Settings, "
+    std::cout << "Ape Escape preloaded mods: 4 packages, "
+                 "3 widescreen choices, 4 temporal-blending rates, "
+                 "single-context presentation, no motion-vector claims, "
+                 "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "
                  "slingshot-block patch, stock guest code untouched by default\n";
     return 0;
