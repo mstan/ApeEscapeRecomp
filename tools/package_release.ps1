@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "v0.2.0",
+    [string]$Version = "v0.2.1",
     [string]$BuildDir = "build-release"
 )
 

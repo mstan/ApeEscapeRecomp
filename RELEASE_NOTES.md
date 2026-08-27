@@ -1,4 +1,4 @@
-# Ape Escape Recompiled - Unreleased
+# Ape Escape Recompiled - v0.2.1
 
 - Replaces the removed Frame Rate package with default-off **Ape Escape Frame
   Smoothing**. Its display / 120 / 144 / 165 presents-per-second modes perform
