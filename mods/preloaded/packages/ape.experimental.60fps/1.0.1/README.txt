@@ -1,4 +1,4 @@
-Ape Escape Temporal Frame Blending (Experimental)
+Ape Escape Temporal Frame Blending
 
 This mod leaves Ape Escape's executable, VSync waits, simulation, timers, and
 audio untouched. It combines the two most recent completed game frames in

@@ -13,7 +13,7 @@ disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
 
 [[feature]]
 id = "quick-gadget-select"
-name = "Quick Gadget Select (Experimental)"
+name = "Quick Gadget Select"
 description = "Press the equipped face button again to open the native-icon gadget row. Right-stick use or another face-button press commits. The right-stick commit needs a DualShock; on a digital pad commit with another face button."
 group = "Gameplay"
 default_enabled = false

@@ -1,6 +1,32 @@
+# Ape Escape Recompiled - v0.2.0
+
+This minor release adds Quick Gadget Select as a bundled gameplay mod, formally
+ships save states and rewind, and refreshes the runtime/UI pins to the latest
+release-tested PSXRecomp stack.
+
+## New features
+
+- **Quick Gadget Select**, contributed by mthsk, is now bundled on the Mods
+  page. Press the equipped face button again to open the native-icon gadget row;
+  right-stick use or another face-button press commits the selection.
+- **Save states and rewind** are now part of the formal release surface. By
+  default, F7 opens the save-state menu and F8 rewinds.
+
+## Runtime and packaging
+
+- Updates psxrecomp to include the latest CD, SIO/memory-card, dispatch, and
+  save-state boundary fixes, plus the display-size plugin API needed by Quick
+  Gadget Select.
+- Updates recomp-ui to the latest launcher fixes, including small-display
+  window fitting and current mod-page behavior.
+- The Windows package now ships Ape's four title-specific mod packages beside
+  the current framework-owned PSX mod catalog.
+
+---
+
 # Ape Escape Recompiled — v0.1.1
 
-This patch improves the experimental temporal frame-blending mod and trims the
+This patch improves the temporal frame-blending mod and trims the
 launcher package to PlayStation-only assets.
 
 ## Frame blending
@@ -82,9 +108,8 @@ behind TombaRecomp and MegaManX6Recomp.
     interpolation, and more.
   - **Controllers** — analog / digital / hybrid pad modes and full keyboard
     rebinding (all 24 inputs, including the analog-stick directions).
-- **Widescreen remains experimental.** UI proportion, character projection,
-  and scene-culling regressions are being image-validated before this work is
-  promoted as a fix.
+- **Widescreen validation continues.** UI proportion, character projection,
+  and scene-culling behavior are being image-validated as the renderer evolves.
 
 ## 🕹️ New in v0.0.5 — controls fix (phantom camera rotation)
 
@@ -146,10 +171,10 @@ behind TombaRecomp and MegaManX6Recomp.
 - **Instant-boot (HLE).** Skips the BIOS boot animation and drops you into the
   game; the real recompiled BIOS stays linked for everything else.
 
-## ✨ Experimental: widescreen (16:9 / 21:9)
+## ✨ Widescreen (16:9 / 21:9)
 
 Off by default — the game ships authentic 4:3. Turn it on in the launcher
-(**Widescreen — EXPERIMENTAL**). It renders a genuinely wider field of view:
+(**Widescreen**). It renders a genuinely wider field of view:
 
 - The 3D world fills the wider frame through Ape's stable
   projection-and-stretch path.

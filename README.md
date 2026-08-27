@@ -43,7 +43,7 @@ Important files:
 
 ## Status
 
-**Playable preview — `v0.1.1`.** Ape Escape **boots from the PS1 BIOS and
+**Playable preview — `v0.2.0`.** Ape Escape **boots from the PS1 BIOS and
 plays** — through the intro, the title, and into gameplay, with dual-analog
 controller input including **L3/R3 stick clicks** (added in v0.0.3), a
 **controls fix** so the analog stick no longer spins the camera (v0.0.5),
@@ -56,15 +56,16 @@ so treat it as a very playable preview rather than a certified full playthrough.
 | Rendering | ✅ OpenGL (default) and Software backends |
 | Controller | ✅ DualShock analog (auto-bound; the net/movement scheme is dual-stick) |
 | Memory cards | ✅ Standard PS1 `.mcd` save/load |
+| Save states / rewind | ✅ Launcher-backed hotkeys and runtime state capture |
 | FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
-| Mods | ✅ Built-in catalog with widescreen and temporal-blending experiments |
-| Widescreen 16:9 / 21:9 / Adaptive | ⚠️ Experimental (opt-in) — see below |
-| Temporal frame blending | ⚠️ Experimental display-refresh / 60 / 120 / 144 / 165 picker with motion-adaptive clarity |
+| Mods | ✅ Built-in catalog with Ape-specific and framework-owned enhancements |
+| Widescreen 16:9 / 21:9 / Adaptive | ✅ Opt-in 16:9, 21:9, and live-window adaptive modes |
+| Temporal frame blending | ✅ Display-refresh / 60 / 120 / 144 / 165 picker with motion-adaptive clarity |
 | Full playthrough | ⚠️ Not yet verified end-to-end |
 
 ### Built-in mods
 
-The launcher's **Mods** page includes three default-off enhancements:
+The launcher's **Mods** page includes four Ape-specific bundled enhancements:
 
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
@@ -76,6 +77,8 @@ The launcher's **Mods** page includes three default-off enhancements:
   double-image trails. This is temporal blending, not motion-vector frame
   generation, so it cannot reconstruct true in-between object positions.
 - **Skip FMVs** ends movies through the game's normal completion path.
+- **Quick Gadget Select**, contributed by mthsk, recreates the later Ape
+  Escape quick gadget switching flow for the face-button gadget menu.
 
 The widescreen mod uses Ape Escape's stable GTE projection-and-stretch path
 for a wider 3D field of view. HUD/UI proportion correction is enabled for its
@@ -100,12 +103,14 @@ and return to 1x if a demanding scene misses full speed.
 3. Set the game disc (a legally obtained Ape Escape (USA, SCUS-94423) image —
    `.cue`+`.bin`, pick the `.cue`). Do **not** convert to a 2048-byte "cooked"
    `.iso`; that discards the XA sectors used for FMV/audio.
-4. Adjust display options and select any experiments on the **Mods** page,
+4. Adjust display options and select any features on the **Mods** page,
    then press **Launch**.
 
 Ape Escape is a dual-analog title — the right stick swings the catch net — so an
 analog controller is strongly recommended. Any plugged pad is auto-bound and
 presented to the game as a DualShock; a keyboard folds onto the analog stick.
+Save states and rewind are exposed through launcher hotkeys; by default F7 opens
+the save-state menu and F8 rewinds.
 The disc path, optional retail BIOS choice, and options are saved next to the
 exe. Clear the BIOS row to return to OpenBIOS.
 

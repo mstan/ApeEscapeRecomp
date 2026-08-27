@@ -13,7 +13,7 @@ disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
 
 [[feature]]
 id = "native-60fps"
-name = "Temporal Frame Blending (Experimental)"
+name = "Temporal Frame Blending"
 description = "Blend completed game frames at the selected presentation rate without accelerating gameplay, timers, or audio. This is not motion-vector frame generation."
 group = "Frame Rate"
 default_enabled = false

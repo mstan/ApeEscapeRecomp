@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "v0.1.1",
+    [string]$Version = "v0.2.0",
     [string]$BuildDir = "build-release"
 )
 
@@ -20,6 +20,7 @@ $StageRoot = Join-Path $Root "release-stage"
 $Stage = Join-Path $StageRoot "ApeEscapeRecomp-windows-x64"
 $ZipPath = Join-Path $Root ("ApeEscapeRecomp-{0}-windows-x64.zip" -f $Version)
 $MingwBin = "C:\msys64\mingw64\bin"
+$CMake = Join-Path $MingwBin "cmake.exe"
 
 $env:PATH = "$MingwBin;$env:PATH"
 
@@ -40,10 +41,17 @@ function Invoke-Native {
 
 # Build: Release, debug tools OFF, launcher ON. PSX_STATIC_RUNTIME defaults ON
 # for MinGW Release so the exe imports only system DLLs (self-contained).
-Invoke-Native { cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
-Invoke-Native { cmake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
+Invoke-Native { & $CMake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
+Invoke-Native { & $CMake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
 
-if (Test-Path $StageRoot) { Remove-Item -Recurse -Force $StageRoot }
+if (Test-Path $StageRoot) {
+    $resolvedRoot = (Resolve-Path $Root).Path.TrimEnd('\')
+    $resolvedStage = (Resolve-Path $StageRoot).Path.TrimEnd('\')
+    if (-not $resolvedStage.StartsWith($resolvedRoot + "\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to delete stage path outside repo root: $resolvedStage"
+    }
+    Remove-Item -LiteralPath $StageRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Force $Stage | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $Stage "saves") | Out-Null
 
@@ -86,11 +94,15 @@ if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
     throw "Built-in Ape Escape mod catalog missing at $ModsSrc"
 }
 Copy-Item -Recurse -Force $ModsSrc (Join-Path $Stage "mods")
-$modCount = (Get-ChildItem (Join-Path $Stage "mods/packages") -Filter manifest.toml -Recurse).Count
-if ($modCount -ne 3) {
-    throw "Expected 3 built-in Ape Escape mod manifests, found $modCount"
+$manifestFiles = Get-ChildItem (Join-Path $Stage "mods/packages") -Filter manifest.toml -Recurse
+$modCount = $manifestFiles.Count
+$apeModCount = ($manifestFiles | Where-Object {
+    $_.FullName -match '\\packages\\ape\.'
+}).Count
+if ($apeModCount -ne 4) {
+    throw "Expected 4 Ape Escape mod manifests, found $apeModCount ($modCount total manifests)"
 }
-Write-Host "Bundled Ape Escape mod catalog: $modCount package(s)"
+Write-Host "Bundled mod catalog: $modCount package(s), including $apeModCount Ape Escape package(s)"
 
 # Player-facing game.toml: copy the REAL game.toml (the single source of truth
 # for all runtime/video/controller/widescreen config) minus the dev-only [audit]
@@ -140,8 +152,9 @@ First launch:
 2. OpenBIOS is selected automatically. You may optionally select your legally
    obtained SCPH1001.BIN in the BIOS row.
 3. Set the game disc: your legally obtained Ape Escape (USA, SCUS-94423) image.
-4. Adjust options and choose any default-off experiments on the Mods page,
-   then press Launch.
+4. Adjust options and choose any features on the Mods page, then press
+   Launch. Ape-specific bundled mods include Widescreen, Frame Rate, Skip FMVs,
+   and Quick Gadget Select. Quick Gadget Select was contributed by mthsk.
 
 Ape Escape requires an analog (DualShock) controller -- a controller is
 strongly recommended. The selected BIOS/disc paths are saved next to the exe.
@@ -149,7 +162,10 @@ strongly recommended. The selected BIOS/disc paths are saved next to the exe.
 Disc image formats: .cue + .bin (pick the .cue) or .bin. Do NOT convert to a
 2048-byte "cooked" .iso -- it discards the XA sectors used for FMV/audio.
 
-Memory cards are stored in the saves directory.
+Save states and rewind are available through the launcher hotkeys. Defaults:
+F7 opens the save-state menu and F8 rewinds.
+
+Memory cards, save states, and rewind data are stored in the saves directory.
 "@ | Set-Content -Encoding ASCII (Join-Path $Stage "START_HERE.txt")
 
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
