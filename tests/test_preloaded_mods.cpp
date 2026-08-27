@@ -46,18 +46,13 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 4) return fail("expected four package manifests");
+    if (manifest_count != 3) return fail("expected three package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
              "ape.widescreen.16-9",
              "ape.widescreen.21-9",
              "ape.widescreen.adaptive",
-             "ape.framerate.60",
-             "ape.framerate.120",
-             "ape.framerate.144",
-             "ape.framerate.165",
-             "ape.framerate.uncapped",
              "ape.fmv.skip",
              "ape.gadgets.quick-select"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
@@ -68,8 +63,8 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 4)
-        return fail("expected four package families");
+    if (manager.packages().size() != 3)
+        return fail("expected three package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -104,31 +99,6 @@ int main(int argc, char** argv) {
 
     if (!manager.set_feature_enabled(
             "ape.enhancement.widescreen", "widescreen", false, &error) ||
-        !manager.set_feature_enabled(
-            "ape.experimental.60fps", "native-60fps", true, &error)) {
-        return fail(error);
-    }
-    for (const auto& [choice, plugin] :
-         {std::pair{"60", "ape.framerate.60"},
-          std::pair{"120", "ape.framerate.120"},
-          std::pair{"144", "ape.framerate.144"},
-          std::pair{"165", "ape.framerate.165"},
-          std::pair{"uncapped", "ape.framerate.uncapped"}}) {
-        if (!manager.set_feature_option(
-                "ape.experimental.60fps", "native-60fps",
-                "rate", choice, &error)) {
-            return fail(error);
-        }
-        const auto fps_plan = manager.resolve(kGameId, "", kDiscSha256);
-        if (!fps_plan.ok || !fps_plan.writes.empty() ||
-            fps_plan.plugins.size() != 1 ||
-            fps_plan.plugins.front().id != plugin) {
-            return fail(std::string("wrong interpolated frame-rate plan for ") +
-                        choice);
-        }
-    }
-    if (!manager.set_feature_enabled(
-            "ape.experimental.60fps", "native-60fps", false, &error) ||
         !manager.set_feature_enabled(
             "ape.enhancement.quick-gadget-select", "quick-gadget-select",
             true, &error)) {
@@ -171,9 +141,8 @@ int main(int argc, char** argv) {
         return fail("Quick Gadget Select patched guest code while disabled");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 4 packages, "
-                 "3 widescreen choices, 5 interpolated frame-rate choices, "
-                 "motion-adaptive clarity blend, Skip FMVs migrated from Settings, "
+    std::cout << "Ape Escape preloaded mods: 3 packages, "
+                 "3 widescreen choices, Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "
                  "slingshot-block patch, stock guest code untouched by default\n";
     return 0;

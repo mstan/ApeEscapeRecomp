@@ -99,8 +99,8 @@ $modCount = $manifestFiles.Count
 $apeModCount = ($manifestFiles | Where-Object {
     $_.FullName -match '\\packages\\ape\.'
 }).Count
-if ($apeModCount -ne 4) {
-    throw "Expected 4 Ape Escape mod manifests, found $apeModCount ($modCount total manifests)"
+if ($apeModCount -ne 3) {
+    throw "Expected 3 Ape Escape mod manifests, found $apeModCount ($modCount total manifests)"
 }
 Write-Host "Bundled mod catalog: $modCount package(s), including $apeModCount Ape Escape package(s)"
 
@@ -153,8 +153,8 @@ First launch:
    obtained SCPH1001.BIN in the BIOS row.
 3. Set the game disc: your legally obtained Ape Escape (USA, SCUS-94423) image.
 4. Adjust options and choose any features on the Mods page, then press
-   Launch. Ape-specific bundled mods include Widescreen, Frame Rate, Skip FMVs,
-   and Quick Gadget Select. Quick Gadget Select was contributed by mthsk.
+   Launch. Ape-specific bundled mods include Widescreen, Skip FMVs, and Quick
+   Gadget Select. Quick Gadget Select was contributed by mthsk.
 
 Ape Escape requires an analog (DualShock) controller -- a controller is
 strongly recommended. The selected BIOS/disc paths are saved next to the exe.

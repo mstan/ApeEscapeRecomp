@@ -13,8 +13,8 @@ FIRST RUN
   1. Launch ApeEscapeRecomp.exe. The launcher window opens.
   2. Set the Disc row to your Ape Escape image.
   3. Optionally visit Mods for the Ape-specific bundled enhancements:
-     Widescreen, Frame Rate, Skip FMVs, and Quick Gadget Select. Quick Gadget
-     Select was contributed by mthsk.
+     Widescreen, Skip FMVs, and Quick Gadget Select. Quick Gadget Select was
+     contributed by mthsk.
   4. Press Launch. Your choices are remembered for next time.
 
 SAVE STATES AND REWIND

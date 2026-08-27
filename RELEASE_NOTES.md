@@ -1,3 +1,12 @@
+# Ape Escape Recompiled - Unreleased
+
+- Removes the bundled Frame Rate / temporal frame-blending mod while issue #3
+  is unresolved. Stock gameplay remains unchanged; the removed package was
+  default-off but could freeze above 60 Hz and did not provide true in-between
+  motion.
+
+---
+
 # Ape Escape Recompiled - v0.2.0
 
 This minor release adds Quick Gadget Select as a bundled gameplay mod, formally
@@ -19,7 +28,7 @@ release-tested PSXRecomp stack.
   Gadget Select.
 - Updates recomp-ui to the latest launcher fixes, including small-display
   window fitting and current mod-page behavior.
-- The Windows package now ships Ape's four title-specific mod packages beside
+- The Windows package now ships Ape's three title-specific mod packages beside
   the current framework-owned PSX mod catalog.
 
 ---
