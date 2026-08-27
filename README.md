@@ -37,7 +37,7 @@ Important files:
 - `seeds/`: Ghidra-derived function starts and game-specific seed data.
 - `tools/regen.ps1`: regenerates the recompiled C output.
 - `tools/package_release.ps1`: builds the redistributable release zip.
-- `psxrecomp-v4.pin`: framework commit this project is known-good against.
+- `psxrecomp-v4/`: framework submodule commit this project is known-good against.
 - `ISSUES.md`: game-specific issue log.
 - `DISC.md`: source-disc identity and verification hashes.
 
