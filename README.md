@@ -47,7 +47,7 @@ Important files:
 plays** — through the intro, the title, and into gameplay, with dual-analog
 controller input including **L3/R3 stick clicks** (added in v0.0.3), a
 **controls fix** so the analog stick no longer spins the camera (v0.0.5),
-working memory-card **save/load** (fixed in v0.0.2), and **no known crashes**. It has not yet been verified all the way to the end,
+and working memory-card **save/load** (fixed in v0.0.2). It has not yet been verified all the way to the end,
 so treat it as a very playable preview rather than a certified full playthrough.
 
 | Area | State |
@@ -60,22 +60,15 @@ so treat it as a very playable preview rather than a certified full playthrough.
 | FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
 | Mods | ✅ Built-in catalog with Ape-specific and framework-owned enhancements |
 | Widescreen 16:9 / 21:9 / Adaptive | ✅ Opt-in 16:9, 21:9, and live-window adaptive modes |
-| Temporal frame blending | ✅ Display-refresh / 60 / 120 / 144 / 165 picker with motion-adaptive clarity |
 | Full playthrough | ⚠️ Not yet verified end-to-end |
 
 ### Built-in mods
 
-The launcher's **Mods** page includes four Ape-specific bundled enhancements:
+The launcher's **Mods** page includes three Ape-specific bundled enhancements:
 
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
   **Adaptive** (live window aspect from 4:3 through 21:9).
-- **Ape Escape Frame Rate** leaves the game's executable and stock simulation
-  cadence untouched, then blends completed frames at the **display refresh**
-  (recommended) or a fixed **60**, **120**, **144**, or **165** presentation
-  rate. **Clarity** mode suppresses blending on large pixel changes to reduce
-  double-image trails. This is temporal blending, not motion-vector frame
-  generation, so it cannot reconstruct true in-between object positions.
 - **Skip FMVs** ends movies through the game's normal completion path.
 - **Quick Gadget Select**, contributed by mthsk, recreates the later Ape
   Escape quick gadget switching flow for the face-button gadget menu.
