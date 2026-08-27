@@ -60,15 +60,22 @@ so treat it as a very playable preview rather than a certified full playthrough.
 | FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
 | Mods | ✅ Built-in catalog with Ape-specific and framework-owned enhancements |
 | Widescreen 16:9 / 21:9 / Adaptive | ✅ Opt-in 16:9, 21:9, and live-window adaptive modes |
+| Temporal frame blending | ✅ Opt-in display / 120 / 144 / 165 presents-per-second modes |
 | Full playthrough | ⚠️ Not yet verified end-to-end |
 
 ### Built-in mods
 
-The launcher's **Mods** page includes three Ape-specific bundled enhancements:
+The launcher's **Mods** page includes four Ape-specific bundled enhancements:
 
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
   **Adaptive** (live window aspect from 4:3 through 21:9).
+- **Ape Escape Frame Smoothing** crossfades completed game frames at the
+  display refresh or a fixed **120**, **144**, or **165 presents/s**. It leaves
+  the executable, simulation, timers, and audio at stock cadence. This is
+  temporal blending, not motion-vector frame generation, so it cannot create
+  true in-between object positions. All OpenGL presentation remains on the
+  renderer's original thread and context.
 - **Skip FMVs** ends movies through the game's normal completion path.
 - **Quick Gadget Select**, contributed by mthsk, recreates the later Ape
   Escape quick gadget switching flow for the face-button gadget menu.

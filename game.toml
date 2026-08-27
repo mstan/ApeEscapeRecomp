@@ -41,9 +41,8 @@ bios_hle = true
 auto_skip_fmv = false
 offer_skip_fmv = false
 
-# Presentation interpolation is not exposed for Ape Escape. Hide the generic
-# Display controls and ignore stale settings.toml values; the previous bundled
-# frame-rate package was removed after issue #3 reports of 120 Hz freezes.
+# Ape owns optional temporal blending through its default-off Frame Smoothing
+# mod. Hide generic Display controls and ignore stale settings.toml values.
 offer_frame_interpolation = false
 
 # OpenGL renderer by default (validated for Ape: native-wide widescreen + the
