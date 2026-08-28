@@ -1,6 +1,7 @@
 #include "mod_packages.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -19,6 +20,10 @@ int fail(const std::string& message) {
 
 void no_op_plugin() {}
 
+extern "C" int psx_mod_set_frame_interpolation(uint32_t) { return 1; }
+
+extern "C" int psx_mod_set_frame_interpolation_blend(uint32_t) { return 1; }
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -30,6 +35,91 @@ int main(int argc, char** argv) {
     std::error_code ec;
     fs::remove_all(root, ec);
     fs::copy(source, root, fs::copy_options::recursive);
+
+    const fs::path legacy_package =
+        root / "packages" / "ape.experimental.60fps" / "1.0.0";
+    fs::create_directories(legacy_package, ec);
+    if (ec) return fail("could not create legacy package fixture");
+    {
+        std::ofstream legacy_manifest(legacy_package / "manifest.toml",
+                                      std::ios::trunc);
+        if (!legacy_manifest) return fail("could not write legacy manifest");
+        legacy_manifest << R"toml(format_version = 5
+id = "ape.experimental.60fps"
+version = "1.0.0"
+name = "Ape Escape Frame Rate"
+author = "mstan"
+description = "Presentation-only interpolated frame-rate modes. Game logic, timers, and audio remain at their stock cadence."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "native-60fps"
+name = "Interpolated Frame Rate (Experimental)"
+description = "Blend completed game frames at the selected output rate without accelerating gameplay, timers, or audio."
+group = "Frame Rate"
+default_enabled = false
+
+[[option]]
+feature = "native-60fps"
+id = "rate"
+label = "Frame rate"
+description = "Presentation rate only; the original game simulation remains untouched. Requires the OpenGL renderer."
+group = "Frame Rate"
+type = "choice"
+default = "60"
+
+[[option.choice]]
+value = "60"
+label = "60 FPS"
+
+[[option.choice]]
+value = "120"
+label = "120 FPS"
+
+[[option.choice]]
+value = "144"
+label = "144 FPS"
+
+[[option.choice]]
+value = "165"
+label = "165 FPS"
+
+[[option.choice]]
+value = "uncapped"
+label = "Uncapped"
+
+[[plugin]]
+feature = "native-60fps"
+id = "ape.framerate.60"
+when = { rate = "60" }
+
+[[plugin]]
+feature = "native-60fps"
+id = "ape.framerate.120"
+when = { rate = "120" }
+
+[[plugin]]
+feature = "native-60fps"
+id = "ape.framerate.144"
+when = { rate = "144" }
+
+[[plugin]]
+feature = "native-60fps"
+id = "ape.framerate.165"
+when = { rate = "165" }
+
+[[plugin]]
+feature = "native-60fps"
+id = "ape.framerate.uncapped"
+when = { rate = "uncapped" }
+)toml";
+        if (!legacy_manifest) return fail("could not finish legacy manifest");
+    }
 
     size_t manifest_count = 0;
     for (const fs::directory_entry& entry :
@@ -46,29 +136,40 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 4) return fail("expected four package manifests");
+    if (manifest_count != 5) return fail("expected five package manifests");
 
-    PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
              "ape.widescreen.16-9",
              "ape.widescreen.21-9",
              "ape.widescreen.adaptive",
-             "ape.frame-smoothing.display",
-             "ape.frame-smoothing.120",
-             "ape.frame-smoothing.144",
-             "ape.frame-smoothing.165",
              "ape.fmv.skip",
              "ape.gadgets.quick-select"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
             return fail(std::string("could not register test plugin ") + id);
     }
 
+    for (const char* id : {
+             "ape.frame-smoothing.display",
+             "ape.frame-smoothing.120",
+             "ape.frame-smoothing.144",
+             "ape.frame-smoothing.165",
+             "ape.framerate.60",
+             "ape.framerate.120",
+             "ape.framerate.144",
+             "ape.framerate.165",
+             "ape.framerate.uncapped"}) {
+        if (!PSXRecompV4::mod_plugin_registered(id)) {
+            return fail(std::string(
+                "frame-smoothing plugin constructor did not register ") + id);
+        }
+    }
+
     PSXRecompV4::ModPackageManager manager(root);
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 4)
-        return fail("expected four package families");
+    if (manager.packages().size() != 5)
+        return fail("expected five package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -130,6 +231,33 @@ int main(int argc, char** argv) {
             "ape.enhancement.frame-smoothing", "temporal-blending",
             false, &error) ||
         !manager.set_feature_enabled(
+            "ape.experimental.60fps", "native-60fps", true, &error)) {
+        return fail(error);
+    }
+    for (const auto& [choice, plugin] :
+         {std::pair{"60", "ape.framerate.60"},
+          std::pair{"120", "ape.framerate.120"},
+          std::pair{"144", "ape.framerate.144"},
+          std::pair{"165", "ape.framerate.165"},
+          std::pair{"uncapped", "ape.framerate.uncapped"}}) {
+        if (!manager.set_feature_option(
+                "ape.experimental.60fps", "native-60fps", "rate", choice,
+                &error)) {
+            return fail(error);
+        }
+        const auto legacy_plan = manager.resolve(kGameId, "", kDiscSha256);
+        if (!legacy_plan.ok || !legacy_plan.writes.empty() ||
+            legacy_plan.plugins.size() != 1 ||
+            legacy_plan.plugins.front().id != plugin) {
+            return fail(std::string(
+                "legacy frame-rate package did not resolve ") + choice);
+        }
+    }
+
+    if (!manager.set_feature_enabled(
+            "ape.experimental.60fps", "native-60fps",
+            false, &error) ||
+        !manager.set_feature_enabled(
             "ape.enhancement.quick-gadget-select", "quick-gadget-select",
             true, &error)) {
         return fail(error);
@@ -171,8 +299,9 @@ int main(int argc, char** argv) {
         return fail("Quick Gadget Select patched guest code while disabled");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 4 packages, "
+    std::cout << "Ape Escape preloaded mods: 4 current packages, "
                  "3 widescreen choices, 4 temporal-blending rates, "
+                 "legacy frame-rate package aliases, "
                  "single-context presentation, no motion-vector claims, "
                  "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "

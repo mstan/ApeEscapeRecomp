@@ -73,6 +73,7 @@ if(BUILD_TESTING)
 
     add_executable(ape_preloaded_mods_test
         tests/test_preloaded_mods.cpp
+        src/mods/ape_frame_smoothing_plugin.c
         "${PSXRECOMP_ROOT}/runtime/src/mod_packages.cpp"
         "${PSXRECOMP_ROOT}/runtime/src/crc32.c"
         "${PSXRECOMP_ROOT}/runtime/src/psx_sha256.c"

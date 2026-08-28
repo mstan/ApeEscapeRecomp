@@ -12,6 +12,10 @@ static void ape_frame_smoothing_display_activate(void) {
     ape_frame_smoothing_set(0u);
 }
 
+static void ape_frame_smoothing_60_activate(void) {
+    ape_frame_smoothing_set(60u);
+}
+
 static void ape_frame_smoothing_120_activate(void) {
     ape_frame_smoothing_set(120u);
 }
@@ -33,4 +37,20 @@ PSX_MOD_CONSTRUCTOR(ape_register_frame_smoothing_plugins) {
         "ape.frame-smoothing.144", ape_frame_smoothing_144_activate);
     (void)psx_mod_register_activation_plugin(
         "ape.frame-smoothing.165", ape_frame_smoothing_165_activate);
+
+    /*
+     * v0.2.1 briefly shipped the renamed frame-smoothing package after test
+     * builds had installed ape.experimental.60fps. Keep those saved launcher
+     * selections valid so stale user mod state does not block startup.
+     */
+    (void)psx_mod_register_activation_plugin(
+        "ape.framerate.60", ape_frame_smoothing_60_activate);
+    (void)psx_mod_register_activation_plugin(
+        "ape.framerate.120", ape_frame_smoothing_120_activate);
+    (void)psx_mod_register_activation_plugin(
+        "ape.framerate.144", ape_frame_smoothing_144_activate);
+    (void)psx_mod_register_activation_plugin(
+        "ape.framerate.165", ape_frame_smoothing_165_activate);
+    (void)psx_mod_register_activation_plugin(
+        "ape.framerate.uncapped", ape_frame_smoothing_display_activate);
 }
