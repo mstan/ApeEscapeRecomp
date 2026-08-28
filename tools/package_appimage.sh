@@ -243,7 +243,8 @@ if [ ! -f "$player_toml" ]; then
 fi
 
 # --- release identity: game id + codegen tag -------------------------------
-# The cache namespace the loader will read is <game_id>/gcc/<arch-abi>/<cg_tag>.
+# The cache namespace the loader will read is
+# <game_id>/gcc/<arch-abi>/<cg_tag>_f<overlay-flavor>.
 # Compute the tag exactly the way compile_overlays.py and the Windows packager
 # do -- from the runtime includes plus the PACKAGED game.toml, so a cache built
 # against the dev config (a different tag) is never mistaken for a usable one.
@@ -265,7 +266,9 @@ print('cg%d_%08x_gc%08x' % (m.codegen_ver(inc), m.codegen_hash(inc),
 PY
 )
 [ -n "$cg_tag" ] || { echo "could not compute codegen tag" >&2; exit 1; }
-echo "game=$game_id  codegen tag=$cg_tag"
+overlay_flavor=${PSX_OVERLAY_FLAVOR:-0}
+cache_tag="${cg_tag}_f${overlay_flavor}"
+echo "game=$game_id  codegen tag=$cg_tag  cache tag=$cache_tag"
 
 # --- stage AppDir ----------------------------------------------------------
 rm -rf -- "$appdir"
@@ -309,17 +312,17 @@ fi
 # interpreted until the player's own cache fills. Linux shards are .so under
 # gcc/linux-x64/ (overlay_loader.c's OVERLAY_SHARED_EXT / PSX_OVERLAY_ARCH_ABI,
 # matched by compile_overlays.cache_arch_abi), and only THIS build's codegen
-# tag is shippable -- the loader ignores foreign tag namespaces.
+# tag/flavor is shippable -- the loader ignores foreign tag namespaces.
 cache_src=${OVERLAY_CACHE_DIR:-"$root/build-linux-cache/cache"}/$game_id
 if [ -d "$cache_src" ]; then
-    shards=$(find "$cache_src" -path "*/$cg_tag/*" \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) 2>/dev/null | wc -l)
+    shards=$(find "$cache_src" -path "*/$cache_tag/*" \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) 2>/dev/null | wc -l)
     if [ "$shards" -eq 0 ]; then
-        echo "Overlay cache at $cache_src holds no shards for this build's tag $cg_tag." >&2
+        echo "Overlay cache at $cache_src holds no shards for this build's tag $cache_tag." >&2
         echo "Rebuild it with compile_overlays.py against this runtime, or pass --allow-no-cache." >&2
         [ "$allow_no_cache" = "1" ] || exit 1
     else
         mkdir -p "$payload/cache/$game_id"
-        ( cd "$cache_src" && find . -path "*/$cg_tag/*" -type f \
+        ( cd "$cache_src" && find . -path "*/$cache_tag/*" -type f \
             \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) \
             -exec cp --parents {} "$payload/cache/$game_id/" \; )
         so_count=$(find "$payload/cache" -name '*.so' | wc -l)
@@ -332,7 +335,7 @@ else
 No overlay cache found at $cache_src, so this AppImage would ship without one
 and every player's first session would run overlays interpreted.
 
-Build one for this release's tag ($cg_tag) with the Linux python, so the
+Build one for this release's tag ($cache_tag) with the Linux python, so the
 shards are .so under gcc/linux-x64:
 
   PSX_OVERLAY_CACHE_DIR="$root/build-linux-cache/cache" \\
@@ -340,7 +343,8 @@ shards are .so under gcc/linux-x64:
   python3 $FRAMEWORK_DIR/tools/compile_overlays.py \\
       --game-toml _release_game.toml \\
       --recompiler $FRAMEWORK_DIR/recompiler/build-linux/psxrecomp-game \\
-      --runtime-include $FRAMEWORK_DIR/runtime/include --gcc \$(command -v gcc)
+      --runtime-include $FRAMEWORK_DIR/runtime/include --gcc \$(command -v gcc) \\
+      --flavor $overlay_flavor
 
 Then re-run this script. Pass --allow-no-cache to ship without one anyway.
 EOF
