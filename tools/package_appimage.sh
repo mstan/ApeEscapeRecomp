@@ -9,6 +9,12 @@
 #   packaging/release/input.ini    the default controller mapping
 #   packaging/release/START_HERE.txt
 #
+# Overlay cache releases are also expected to share capture evidence:
+# Windows and Linux shards must be rebuilt for their own platform, but both
+# should be compiled from the same validated overlay_captures.json manifest.
+# Do not copy Windows .dll shards into an AppImage; rebuild .so shards from
+# that manifest with compile_overlays.py.
+#
 # Reproducibility:
 #   * the version is never hardcoded here or in AppRun (AppRun's marker is
 #     stamped from VERSION at package time),
@@ -312,7 +318,9 @@ fi
 # interpreted until the player's own cache fills. Linux shards are .so under
 # gcc/linux-x64/ (overlay_loader.c's OVERLAY_SHARED_EXT / PSX_OVERLAY_ARCH_ABI,
 # matched by compile_overlays.cache_arch_abi), and only THIS build's codegen
-# tag/flavor is shippable -- the loader ignores foreign tag namespaces.
+# tag/flavor is shippable -- the loader ignores foreign tag namespaces. The
+# expected input is the same validated overlay_captures.json manifest used for
+# Windows shard releases; only the compiled shard format is platform-specific.
 cache_src=${OVERLAY_CACHE_DIR:-"$root/build-linux-cache/cache"}/$game_id
 if [ -d "$cache_src" ]; then
     shards=$(find "$cache_src" -path "*/$cache_tag/*" \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) 2>/dev/null | wc -l)
@@ -335,8 +343,9 @@ else
 No overlay cache found at $cache_src, so this AppImage would ship without one
 and every player's first session would run overlays interpreted.
 
-Build one for this release's tag ($cache_tag) with the Linux python, so the
-shards are .so under gcc/linux-x64:
+Build one for this release's tag ($cache_tag) from the same validated
+overlay_captures.json manifest used for the Windows shard release. Use the
+Linux python/toolchain so the shards are .so under gcc/linux-x64:
 
   PSX_OVERLAY_CACHE_DIR="$root/build-linux-cache/cache" \\
   PSX_OVERLAY_CAPTURES="<coverage vault>/overlay_captures.json" \\

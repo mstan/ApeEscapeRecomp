@@ -8,6 +8,11 @@ param(
 
 # Ape Escape (SCUS-94423) release packager. Adapted from MegaManX6Recomp.
 #
+# Overlay shard releases are expected to share capture evidence across
+# platforms: Windows and Linux shards must be rebuilt for their own loader
+# format, but both should come from the same validated overlay_captures.json
+# manifest so coverage does not drift between the zip and AppImage.
+#
 # NOTE: this intentionally does NOT regenerate the game C. v0.0.1 ships the
 # exact recompiled code that was validated booting to 3D title/gameplay; the
 # merged-master recompiler's wider function discovery is proven on Tomba/MMX6
