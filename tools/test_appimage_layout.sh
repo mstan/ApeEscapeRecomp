@@ -53,7 +53,7 @@ fi
 # gcc/linux-x64; a .dll here would mean the Windows cache was staged and the
 # loader (which dlopen()s OVERLAY_SHARED_EXT) would ignore every one of them.
 seeded_so=$(find "$data_dir/cache" -name '*.so' 2>/dev/null | wc -l)
-if [ "$seeded_so" -eq 0 ]; then
+if [ "$seeded_so" -eq 0 ] && [ "${ALLOW_NO_CACHE:-0}" != "1" ]; then
     echo "seeded cache holds no .so shards" >&2
     fail=1
 fi

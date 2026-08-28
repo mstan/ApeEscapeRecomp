@@ -1,5 +1,8 @@
 param(
-    [string]$Version = "v0.2.1",
+    # Empty means "read packaging/release/VERSION", the single source of truth
+    # shared with tools/package_appimage.sh so Windows and Linux releases do
+    # not drift.
+    [string]$Version = "",
     [string]$BuildDir = "build-release"
 )
 
@@ -15,6 +18,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$PackagingRelease = Join-Path $Root "packaging\release"
+if (-not $Version) {
+    $VersionFile = Join-Path $PackagingRelease "VERSION"
+    if (-not (Test-Path -LiteralPath $VersionFile)) {
+        throw "No -Version given and $VersionFile is missing"
+    }
+    $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim()
+    if (-not $Version) { throw "$VersionFile is empty" }
+}
 $BuildPath = Join-Path $Root $BuildDir
 $StageRoot = Join-Path $Root "release-stage"
 $Stage = Join-Path $StageRoot "ApeEscapeRecomp-windows-x64"
