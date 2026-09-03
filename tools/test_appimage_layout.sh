@@ -15,8 +15,7 @@ appimage=${1:-}
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 expected_version=$(tr -d ' \t\r\n' < "$root/packaging/release/VERSION")
-# Per-game identity: ENV_PREFIX names the AppImage's env overrides and
-# EXPECTED_MODS the size of the shipped catalog.
+# Per-game identity: ENV_PREFIX names the AppImage's env overrides.
 # shellcheck source=/dev/null
 . "$root/packaging/release/app.conf"
 
@@ -31,7 +30,7 @@ fail=0
 check_file() { [ -f "$data_dir/$1" ] || { echo "MISSING file: $1" >&2; fail=1; }; }
 check_dir()  { [ -d "$data_dir/$1" ] || { echo "MISSING dir:  $1" >&2; fail=1; }; }
 
-for d in saves cache mods assets bios; do check_dir "$d"; done
+for d in saves cache mods mods/bundled assets bios; do check_dir "$d"; done
 for f in game.toml input.ini START_HERE.txt LICENSE README.md \
          bios/openbios.bin bios/OpenBIOS.LICENSE .appimage-layout-version; do
     check_file "$f"
@@ -43,9 +42,15 @@ if [ "$got_version" != "$expected_version" ]; then
     fail=1
 fi
 
-manifests=$(find "$data_dir/mods" -name manifest.toml | wc -l)
-if [ "$manifests" -ne "$EXPECTED_MODS" ]; then
-    echo "expected $EXPECTED_MODS mod manifests in the seeded catalog, found $manifests" >&2
+legacy_packages=$(find "$data_dir/mods" -path "$data_dir/mods/packages" -type d | wc -l)
+if [ "$legacy_packages" -ne 0 ]; then
+    echo "seeded legacy mods/packages catalog" >&2
+    fail=1
+fi
+package_dirs=$(find "$data_dir/mods/bundled" -mindepth 1 -maxdepth 1 -type d | wc -l)
+manifests=$(find "$data_dir/mods/bundled" -mindepth 2 -maxdepth 2 -name manifest.toml | wc -l)
+if [ "$package_dirs" -eq 0 ] || [ "$manifests" -ne "$package_dirs" ]; then
+    echo "seeded mod catalog has $package_dirs package dir(s) and $manifests manifest(s)" >&2
     fail=1
 fi
 

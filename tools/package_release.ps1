@@ -272,9 +272,8 @@ Write-Host "Staged player game.toml from real game.toml (audit section stripped)
 #     three rebuilt the cache tag from a local PowerShell format string that
 #     predated fields the real tag has since grown (_gc<config-hash>,
 #     _f<flavor>), so their filters matched nothing and a perfectly good cache
-#     staged ZERO shards; all three fetched the toolchain with a bare
-#     Invoke-WebRequest guarded by a plain Test-Path, so a truncated or tampered
-#     mirror response was cached and reused forever with no hash to reject it.
+#     staged ZERO shards; all three also carried local toolchain download code
+#     instead of the framework's pinned, hash-checked staging path.
 #
 # THE RULE, and why it is this rule and not a per-title list.
 #
@@ -283,11 +282,9 @@ Write-Host "Staged player game.toml from real game.toml (audit section stripped)
 # <exe>/cache/<id>/<compiler>/<arch-abi>/<tag>/ on every launch (main.cpp
 # deferred_overlay_cache -> overlay_loader_init), so a package that declares it
 # and ships nothing there has promised native overlays and delivered the
-# interpreter. Add-OverlayCache therefore THROWS, and this packager gives it no
-# way not to: no -AllowNoCache to forward, no downgrade to Write-Warning. This
-# project has already shipped four separate incomplete packages because a
-# warning scrolled past in a build log; a switch that turns the throw off is the
-# same defect with a flag on it.
+# interpreter. Add-OverlayCache therefore THROWS. This project has already
+# shipped incomplete packages because a warning scrolled past in a build log;
+# this path stays fail-loud.
 #
 # If a title's staged config does NOT declare overlay_cache, no cache is staged,
 # that is said out loud, and we assert none rode along anyway -- shards the
