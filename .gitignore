@@ -10,6 +10,11 @@
 # Release packaging artifacts
 /release-stage/
 *.zip
+# Pinned toolchain archives the packager downloads for overlay_toolchain/
+# staging (embedded python + tcc, ~25 MB). Get-PinnedArchive re-verifies their
+# SHA256 on every use, so caching them locally is safe -- committing them is
+# not, and nothing here referenced the directory before the packager created it.
+/tools/_toolchain_cache/
 
 # Local PlayStation assets (disc image, extracted boot EXE, memory cards)
 # Both forms: trailing-slash ignores the dir, no-slash ignores the junction
