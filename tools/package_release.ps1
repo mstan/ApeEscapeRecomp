@@ -4,6 +4,15 @@ param(
     # not drift.
     [string]$Version = "",
     [string]$BuildDir = "build-release",
+    # Where the accumulated overlay shard cache lives: the --out-dir
+    # compile_overlays.py writes to, which is also where the runtime's own
+    # autocompile deposits shards (<exe>/cache). Only shards under THIS
+    # release's codegen tag are staged; see the staging block near the end.
+    #
+    # There is deliberately no switch to release without one. game.toml
+    # declares [runtime] overlay_cache = true, so a cache-less package is a
+    # package that promised native overlays and shipped the interpreter.
+    [string]$CacheBuildDir = "build-release",
     # Framework and launcher checkouts to build and stage from. Empty means the
     # in-repo psxrecomp-v4 / recomp-ui submodules (normally directory junctions
     # to the shared checkouts). Override either one to validate a release
@@ -82,8 +91,71 @@ function Invoke-Native {
     if ($code -ne 0) { throw "$What failed (exit $code)" }
 }
 
+# One scalar out of one table of a game.toml, or $null.
+#
+# Used below against the STAGED game.toml, never the dev one. The cache tag
+# folds in a hash of the config file, so the dev config and the player config
+# name DIFFERENT cache namespaces; deciding "does this release want a cache" or
+# "which game id keys the cache dir" from the dev config would let the packager
+# satisfy a promise the shipped exe never makes (or miss one it does).
+#
+# Not a TOML parser on purpose: this needs to work with nothing but Windows
+# PowerShell 5.1, and it only ever reads two scalars. Comment lines are skipped
+# because game.toml carries commented-out examples of the very keys read here.
+function Get-TomlScalar {
+    param(
+        [Parameter(Mandatory)][string]$GameToml,
+        [Parameter(Mandatory)][string]$Table,
+        [Parameter(Mandatory)][string]$Key
+    )
+    $section = ""
+    foreach ($raw in (Get-Content -LiteralPath $GameToml)) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith("#")) { continue }
+        if ($line -match '^\[\[?([^\]]+)\]\]?$') { $section = $Matches[1].Trim(); continue }
+        if ($section -ne $Table) { continue }
+        if ($line -match ('^' + [regex]::Escape($Key) + '\s*=\s*(.+?)\s*(?:#.*)?$')) {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $null
+}
+
+# ---- Recompiler ----------------------------------------------------------
+# Needed by two things below, both of them new here: Get-OverlayCgTag asks this
+# binary for the canonical hash of the config fields that define a cache
+# namespace (--overlay-config-hash), and Add-OverlayToolchain ships it so a
+# player with no compiler can still turn captured overlays into native code.
+#
+# BUILD it rather than trusting whatever is in the build dir. The recompiler
+# bakes the emitter-source hash at ITS build time while the cache tag reads the
+# same hash out of runtime/include/overlay_codegen_hash.h, and nothing else ties
+# the two together: a recompiler built before the last emitter change emits OLD
+# code stamped with the CURRENT tag -- read tag == write tag, content stale.
+# compile_overlays.verify_recompiler_matches_tag() refuses to build shards in
+# that state, so a stale binary here fails the cache build later with a message
+# about a mismatch instead of here with a build.
+$RecompSourceDir = Join-Path $FrameworkRoot "recompiler"
+$RecompDir = Join-Path $RecompSourceDir "build"
+$RecompBin = Join-Path $RecompDir "psxrecomp-game.exe"
+if (-not (Test-Path -LiteralPath (Join-Path $RecompDir "build.ninja"))) {
+    Invoke-Native {
+        & $CMake -S $RecompSourceDir -B $RecompDir -G Ninja -DCMAKE_BUILD_TYPE=Release
+    } "recompiler configure"
+}
+Invoke-Native {
+    & $CMake --build $RecompDir --target psxrecomp-game -j $env:NUMBER_OF_PROCESSORS
+} "recompiler build"
+
 # Build: Release, debug tools OFF, launcher ON. PSX_STATIC_RUNTIME defaults ON
 # for MinGW Release so the exe imports only system DLLs (self-contained).
+#
+# This step also (re)writes psxrecomp-v4/runtime/include/overlay_codegen_hash.h
+# via runtime.cmake's hash_codegen custom command, and the cache tag is derived
+# from that header. So the order runtime build -> derive tag -> filter shards is
+# load-bearing: derive the tag before this and it is computed from a header that
+# does not exist yet or is stale, and every shard is filed under a namespace the
+# shipped runtime does not scan.
 Invoke-Native { & $CMake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF `
     "-DPSXRECOMP_ROOT=$FrameworkRoot" "-DRECOMP_UI_ROOT=$RecompUiRoot" } "cmake configure"
 Invoke-Native { & $CMake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
@@ -179,6 +251,136 @@ if ($idx -ge 0) {
 $playerToml = if ($cut -ge 0) { $realToml.Substring(0, $cut).TrimEnd() + "`n" } else { $realToml }
 $playerToml | Set-Content -Encoding ASCII (Join-Path $Stage "game.toml")
 Write-Host "Staged player game.toml from real game.toml (audit section stripped)"
+
+# ---- Overlay shard cache + self-contained overlay toolchain --------------
+# BOTH staged by the framework's SHARED module, psxrecomp-v4/tools/
+# release_overlay_stage.ps1, dot-sourced above for Add-ModCatalog. This is a
+# CALL and must stay one: hand-copying this logic is precisely how the ecosystem
+# diverged. Measured across the five titles' packagers on 2026-09-02:
+#
+#   * THIS packager staged NEITHER. Ape Escape's packager was created on
+#     2026-07-05 by copying MegaManX6's and trimming it from 345 lines to 146,
+#     and the overlay cache and toolchain staging were among the lines cut. No
+#     Ape commit has ever contained the string "overlay_toolchain", so every Ape
+#     release ever published ran 100% of its overlay dispatches on the dirty-RAM
+#     interpreter (disp_native=0, disp_interp=4,480,307 in a single session) --
+#     while game.toml's own comment above overlay_cache promised "the play-free
+#     AOT overlay cache beside the executable ... as a fail-safe". That comment
+#     was aspirational for this title's entire life. It is true as of this
+#     commit.
+#   * MegaManX4, X5 and X6 each carried their own ~60-line copy instead. All
+#     three rebuilt the cache tag from a local PowerShell format string that
+#     predated fields the real tag has since grown (_gc<config-hash>,
+#     _f<flavor>), so their filters matched nothing and a perfectly good cache
+#     staged ZERO shards; all three fetched the toolchain with a bare
+#     Invoke-WebRequest guarded by a plain Test-Path, so a truncated or tampered
+#     mirror response was cached and reused forever with no hash to reject it.
+#
+# THE RULE, and why it is this rule and not a per-title list.
+#
+# The STAGED game.toml is the contract the shipped exe reads. When it declares
+# [runtime] overlay_cache = true, the runtime scans
+# <exe>/cache/<id>/<compiler>/<arch-abi>/<tag>/ on every launch (main.cpp
+# deferred_overlay_cache -> overlay_loader_init), so a package that declares it
+# and ships nothing there has promised native overlays and delivered the
+# interpreter. Add-OverlayCache therefore THROWS, and this packager gives it no
+# way not to: no -AllowNoCache to forward, no downgrade to Write-Warning. This
+# project has already shipped four separate incomplete packages because a
+# warning scrolled past in a build log; a switch that turns the throw off is the
+# same defect with a flag on it.
+#
+# If a title's staged config does NOT declare overlay_cache, no cache is staged,
+# that is said out loud, and we assert none rode along anyway -- shards the
+# runtime never scans are pure download weight. The predicate is the shipped
+# config either way, so the rule is derived from the release rather than
+# maintained as a list of exceptions.
+#
+# The TOOLCHAIN is staged UNCONDITIONALLY in both branches. The runtime gates
+# autocompile on exactly <exe>/overlay_toolchain/python/python.exe (main.cpp
+# `tk_present`) and synthesises the whole compile command out of that directory
+# when the staged config carries no overlay_autocompile_cmd -- which every
+# release config omits, because the dev command points at psxrecomp-v4/ paths
+# that do not ship. Ape's config carries no autocompile command at all, so for
+# THIS title the bundled toolchain is the only path from a captured overlay to
+# native code that exists. Without it the capture -> compile fail-safe can never
+# fire for any title, cache or no cache, and there is no reason to withhold it.
+$RecompTools = (Resolve-Path -LiteralPath (Join-Path $FrameworkRoot "tools")).Path
+$RecompInc   = (Resolve-Path -LiteralPath (Join-Path $FrameworkRoot "runtime\include")).Path
+$StagedGameToml = Join-Path $Stage "game.toml"
+
+# The loader keys the cache directory by the [game] id in the config it loaded,
+# so read the id out of the STAGED config rather than repeating "SCUS-94423"
+# here. A literal would be one more thing that can disagree with the shipped
+# file, and the disagreement would be silent: shards under the wrong id are
+# simply never scanned.
+$CacheGameId = Get-TomlScalar -GameToml $StagedGameToml -Table "game" -Key "id"
+if (-not $CacheGameId) {
+    throw "Could not read [game] id from the staged config $StagedGameToml"
+}
+
+# Cache SOURCE root (the parent of the per-game directory; the module appends
+# the game id). NORMALISE before the module slices relative paths out of it:
+# -CacheBuildDir may legitimately contain '..' for a cache kept outside the
+# repo, Join-Path does not collapse that, and the unresolved string is then
+# LONGER than the real prefix -- which once made every staged shard land at
+# cache/<id>/<truncated garbage>/ while the packager still reported a healthy
+# shard count.
+$CacheSrcRoot = if ([System.IO.Path]::IsPathRooted($CacheBuildDir)) {
+    $CacheBuildDir
+} else {
+    Join-Path $Root $CacheBuildDir
+}
+$CacheSrcRootRaw = $CacheSrcRoot
+if (Test-Path -LiteralPath $CacheSrcRoot) {
+    $CacheSrcRoot = (Resolve-Path -LiteralPath $CacheSrcRoot).Path
+}
+$CacheSrcRoot = Join-Path $CacheSrcRoot "cache"
+# Quarantined caches are never an input. A matching cg tag does NOT prove
+# compatibility: a quarantined cross-version Ape cache carries the SAME tag as a
+# good one (measured: cg10_a4319b6f_gcc31ae4a9_f0 on both, with only 6 of 50
+# shard filenames in common, and only the quarantined copy carrying an
+# .abi_00000015.ok memo for an ABI the current overlay_api.h has moved past). So
+# the tag filter cannot reject it and the PATH is the only signal left. Check
+# the given path and its resolved form -- a junction can point a clean-looking
+# name at a quarantined tree.
+foreach ($p in @($CacheSrcRootRaw, $CacheSrcRoot)) {
+    if ($p -match 'QUARANTINE') {
+        throw ("Refusing a quarantined overlay cache source: $p. A quarantined " +
+               "cross-version cache can carry the same cg tag as a good one, so " +
+               "the tag filter cannot reject it; point -CacheBuildDir at a cache " +
+               "built by this release's own toolchain.")
+    }
+}
+
+# The tag comes from compile_overlays.cache_tag() via the module, never from a
+# format string here, and it is derived from the STAGED config for the reason
+# above. It is derived HERE, after the runtime build wrote
+# runtime/include/overlay_codegen_hash.h and after the staged game.toml exists.
+$CgTag = Get-OverlayCgTag -RecompTools $RecompTools -RecompInc $RecompInc `
+                          -GameExe $RecompBin -GameToml $StagedGameToml
+Write-Host "Release codegen tag: $CgTag (only this cache namespace is shipped)"
+
+$OverlayCacheDeclared =
+    ((Get-TomlScalar -GameToml $StagedGameToml -Table "runtime" -Key "overlay_cache") -eq "true")
+if ($OverlayCacheDeclared) {
+    Write-Host ("Staged game.toml declares [runtime] overlay_cache = true -- a " +
+                "shard cache for $CgTag is REQUIRED in this package")
+    Add-OverlayCache -GameId $CacheGameId -CacheSrcRoot $CacheSrcRoot `
+                     -Stage $Stage -CgTag $CgTag | Out-Null
+} else {
+    Write-Host ("Staged game.toml does not declare [runtime] overlay_cache -- " +
+                "staging NO shard cache; the shipped runtime would never scan one")
+    if (Test-Path -LiteralPath (Join-Path $Stage "cache")) {
+        throw ("The staged config does not declare [runtime] overlay_cache, yet " +
+               "a cache/ tree is present in the stage. The runtime never scans " +
+               "it, so it is download weight that also implies a guarantee the " +
+               "package does not make.")
+    }
+}
+Add-OverlayToolchain -Stage $Stage -RecompDir $RecompDir -RecompTools $RecompTools `
+                     -RecompInc $RecompInc -MingwBin $MingwBin `
+                     -DlCache (Join-Path $Root "tools\_toolchain_cache") | Out-Null
+
 
 # Verify self-containment: imports must be system DLLs only.
 $objdump = Join-Path $MingwBin "objdump.exe"
