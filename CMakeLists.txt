@@ -93,4 +93,35 @@ if(BUILD_TESTING)
         COMMAND "$<TARGET_FILE:ape_preloaded_mods_test>"
                 "${APE_PRELOADED_MODS}"
     )
+
+    # Release overlay staging: the shard cache and the overlay toolchain.
+    #
+    # Two things must reach a release for this title's overlays to run native on
+    # a player's machine -- cache/<id>/<compiler>/<arch-abi>/<tag>/*.dll, and
+    # overlay_toolchain/python/python.exe, which is the exact file the runtime
+    # gates autocompile on (main.cpp tk_present). Omitting either fails NOTHING
+    # at runtime: the loader falls back to the dirty-RAM interpreter and reports
+    # itself healthy. That is how this title shipped its entire release history
+    # with neither while game.toml promised an AOT cache.
+    #
+    # The test has two halves. The CONTRACT half always runs and needs no build
+    # products: it asserts tools/package_release.ps1 delegates to the framework's
+    # shared staging module and keeps no private copy of anything the module owns
+    # (a locally formatted cache tag, an unpinned toolchain download, a warning
+    # where a throw belongs, an AllowNoCache escape hatch). Every drift defect
+    # this campaign found is a contract violation, so this is the half that
+    # catches them cheaply. The ARTIFACT half validates a real staged tree or
+    # release zip when one is present -- set PSX_RELEASE_STAGE or PSX_RELEASE_ZIP,
+    # or let it discover release-stage/ and *-windows-x64.zip -- and is skipped
+    # (loudly, in the log) otherwise, because producing a package needs the
+    # game's disc image and a full Release build and so cannot run in a bare
+    # checkout.
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME ape_release_overlay_staging_test
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_overlay_staging.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+                "${PSXRECOMP_ROOT}"
+    )
 endif()
