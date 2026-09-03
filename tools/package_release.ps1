@@ -3,7 +3,17 @@ param(
     # shared with tools/package_appimage.sh so Windows and Linux releases do
     # not drift.
     [string]$Version = "",
-    [string]$BuildDir = "build-release"
+    [string]$BuildDir = "build-release",
+    # Framework and launcher checkouts to build and stage from. Empty means the
+    # in-repo psxrecomp-v4 / recomp-ui submodules (normally directory junctions
+    # to the shared checkouts). Override either one to validate a release
+    # against a worktree WITHOUT moving a submodule pin -- the same
+    # -DPSXRECOMP_ROOT / -DRECOMP_UI_ROOT pattern an ordinary validation build
+    # uses. Without this the packager could only ever be exercised against
+    # whatever the submodules happen to point at, which is precisely how a
+    # framework-side layout change reaches a release packager untested.
+    [string]$FrameworkDir = "",
+    [string]$RecompUiDir = ""
 )
 
 # Ape Escape (SCUS-94423) release packager. Adapted from MegaManX6Recomp.
@@ -32,6 +42,22 @@ if (-not $Version) {
     $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim()
     if (-not $Version) { throw "$VersionFile is empty" }
 }
+if ($FrameworkDir) {
+    $FrameworkRoot = (Resolve-Path -LiteralPath $FrameworkDir).Path
+} else {
+    $FrameworkRoot = Join-Path $Root "psxrecomp-v4"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $FrameworkRoot "tools\release_overlay_stage.ps1"))) {
+    throw ("No psxrecomp framework checkout at $FrameworkRoot " +
+           "(expected tools\release_overlay_stage.ps1). Run " +
+           "'git submodule update --init psxrecomp-v4', or pass " +
+           "-FrameworkDir <path-to-psxrecomp>.")
+}
+if ($RecompUiDir) {
+    $RecompUiRoot = (Resolve-Path -LiteralPath $RecompUiDir).Path
+} else {
+    $RecompUiRoot = Join-Path $Root "recomp-ui"
+}
 $BuildPath = Join-Path $Root $BuildDir
 $StageRoot = Join-Path $Root "release-stage"
 $Stage = Join-Path $StageRoot "ApeEscapeRecomp-windows-x64"
@@ -58,7 +84,8 @@ function Invoke-Native {
 
 # Build: Release, debug tools OFF, launcher ON. PSX_STATIC_RUNTIME defaults ON
 # for MinGW Release so the exe imports only system DLLs (self-contained).
-Invoke-Native { & $CMake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
+Invoke-Native { & $CMake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF `
+    "-DPSXRECOMP_ROOT=$FrameworkRoot" "-DRECOMP_UI_ROOT=$RecompUiRoot" } "cmake configure"
 Invoke-Native { & $CMake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
 
 if (Test-Path $StageRoot) {
@@ -105,21 +132,35 @@ $fontCount = (Get-ChildItem (Join-Path $Stage "assets/fonts") -Filter *.ttf -Err
 $imgCount  = (Get-ChildItem (Join-Path $Stage "assets/img")   -Filter *.tga -ErrorAction SilentlyContinue).Count
 Write-Host "Bundled recomp-ui launcher assets: $fontCount font(s) + $imgCount image(s)"
 
-# Built-in mod catalog staged by the runtime target's POST_BUILD command.
-$ModsSrc = Join-Path $BuildPath "mods"
-if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
-    throw "Built-in Ape Escape mod catalog missing at $ModsSrc"
-}
-Copy-Item -Recurse -Force $ModsSrc (Join-Path $Stage "mods")
-$manifestFiles = Get-ChildItem (Join-Path $Stage "mods/packages") -Filter manifest.toml -Recurse
-$modCount = $manifestFiles.Count
-$apeModCount = ($manifestFiles | Where-Object {
-    $_.FullName -match '\\packages\\ape\.'
-}).Count
-if ($apeModCount -ne 4) {
-    throw "Expected 4 Ape Escape mod manifests, found $apeModCount ($modCount total manifests)"
-}
-Write-Host "Bundled mod catalog: $modCount package(s), including $apeModCount Ape Escape package(s)"
+# Built-in mod catalog, staged into <build>/mods/bundled by the runtime
+# target's POST_BUILD command (psxrecomp_add_runtime_target's
+# PRELOADED_MODS_DIR stages the framework's mods/builtin/packages and this
+# repo's mods/preloaded/packages there together).
+#
+# Routed through the framework's shared Add-ModCatalog instead of the hand-
+# written block that used to live here. That block hard-coded "exactly 4 ape.*
+# manifests" and globbed mods/packages, and both halves of it were wrong:
+#
+#   * the count went stale by construction -- it describes only this title's
+#     half of a catalog the framework also contributes to, so it said nothing
+#     about whether the shared psx.* packages shipped at all (the same class of
+#     assertion that made Tomba 2 unreleasable on 2026-09-01 when the framework
+#     gained a fifth builtin);
+#   * mods/packages is the PRE-SPLIT layout. Framework 4cc04be3 moved staged
+#     build output to mods/bundled, and nothing in this repo followed, so at
+#     framework master the four ape.* packages were staged where neither the
+#     launcher nor a packager reads them (bead beads-eio.3.101).
+#
+# Add-ModCatalog asserts the invariant instead of a number: every package the
+# SOURCES define -- this repo's mods/preloaded/packages and the framework's
+# mods/builtin/packages -- must survive into the staged catalog. That cannot go
+# stale when a mod is added on either side, and it still catches the failure
+# that matters, a mod silently not shipping. It also strips the two things
+# under mods/ that belong to this machine (installed/ and state.toml).
+. (Join-Path $FrameworkRoot "tools\release_overlay_stage.ps1")
+Add-ModCatalog -BuildPath $BuildPath -Stage $Stage `
+               -GameModSource (Join-Path $Root "mods\preloaded") `
+               -FrameworkModSource (Join-Path $FrameworkRoot "mods\builtin") | Out-Null
 
 # Player-facing game.toml: copy the REAL game.toml (the single source of truth
 # for all runtime/video/controller/widescreen config) minus the dev-only [audit]
