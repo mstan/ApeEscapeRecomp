@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# package_appimage.sh — build the Linux x86_64 AppImage release for a recomp title.
+# package_appimage.sh -- build the Linux x86_64 AppImage release for a recomp title.
 #
 # Counterpart to tools/package_release.ps1 (Windows). Both packagers read the
 # SAME sources so the two platforms cannot drift:
@@ -24,7 +24,7 @@
 #   * the run prints SHA256 for the artifact.
 #
 # WSL: building an AppDir directly on a /mnt/<drive> DrvFs mount fails or
-# silently degrades — symlinks need metadata mount options and the exec bit is
+# silently degrades; symlinks need metadata mount options and the exec bit is
 # not preserved. When the repo lives on /mnt we therefore stage the AppDir on
 # the native Linux filesystem and copy only the finished .AppImage back to the
 # Windows-visible output path. Pass --out to place it elsewhere; a Windows-style
@@ -50,7 +50,6 @@ orig_args=("$@")
 version=""
 out_dir=""
 skip_build=0
-allow_no_cache=0
 build_dir=${BUILD_DIR:-"$root/build-appimage"}
 # Leave two cores for the rest of the machine; packaging must not make the box
 # unusable. Override with --jobs / BUILD_JOBS.
@@ -64,7 +63,6 @@ while [ $# -gt 0 ]; do
         --build-dir) build_dir=$2; shift 2;;
         --jobs)    jobs=$2; shift 2;;
         --skip-build) skip_build=1; shift;;
-        --allow-no-cache) allow_no_cache=1; shift;;
         --nice) nice_level=$2; shift 2;;
         -h|--help) sed -n '2,36p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
@@ -91,7 +89,7 @@ app_conf=$root/packaging/release/app.conf
 [ -f "$app_conf" ] || { echo "missing $app_conf" >&2; exit 1; }
 # shellcheck source=/dev/null
 . "$app_conf"
-for v in APP_NAME EXE_NAME PAYLOAD_DIR DESKTOP_ID ENV_PREFIX ICON_SOURCE EXPECTED_MODS FRAMEWORK_DIR; do
+for v in APP_NAME EXE_NAME PAYLOAD_DIR DESKTOP_ID ENV_PREFIX ICON_SOURCE FRAMEWORK_DIR; do
     eval "val=\${$v:-}"
     [ -n "$val" ] || { echo "$app_conf does not set $v" >&2; exit 1; }
 done
@@ -168,6 +166,11 @@ echo "version=$version  SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
 # OpenBIOS (MIT, no dump required) and SCPH1001 when a dump is present, rather
 # than failing at cmake with a message about a script we could have run.
 fw=$root/$FRAMEWORK_DIR
+# Shared release staging surface: tag derivation, cache selection, toolchain
+# staging, and mod catalog checks live in psxrecomp, not this title packager.
+# shellcheck source=/dev/null
+. "$fw/tools/release_overlay_stage.sh"
+psx_release_stage_init "$fw"
 # A CMake build directory records absolute paths and its generator's compiler,
 # so a tree configured by Windows cmake (F:/..., ninja.exe) cannot be reused
 # from WSL. Keep a Linux-only directory; never share build-t2 with Windows.
@@ -260,22 +263,14 @@ game_id=$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' 
 
 recompiler_bin=$fw/$bios_build/psxrecomp-game
 [ -x "$recompiler_bin" ] || recompiler_bin=$fw/recompiler/build-linux/psxrecomp-game
-cg_tag=$(python3 - "$fw/tools/compile_overlays.py" "$fw/runtime/include" \
-                   "$recompiler_bin" "$player_toml" <<'PY'
-import importlib.util, os, sys
-mod_path, inc, exe, gt = sys.argv[1:5]
-spec = importlib.util.spec_from_file_location('co', mod_path)
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print('cg%d_%08x_gc%08x' % (m.codegen_ver(inc), m.codegen_hash(inc),
-                            m.overlay_config_hash(os.path.abspath(exe),
-                                                  os.path.abspath(gt))))
-PY
-)
+cg_tag=$(psx_overlay_cg_tag \
+    --runtime-include "$fw/runtime/include" \
+    --recompiler "$recompiler_bin" \
+    --game-toml "$player_toml" \
+    --flavor-from-build "$build_dir" \
+    --runtime-target psx-runtime)
 [ -n "$cg_tag" ] || { echo "could not compute codegen tag" >&2; exit 1; }
-overlay_flavor=${PSX_OVERLAY_FLAVOR:-0}
-cache_tag="${cg_tag}_f${overlay_flavor}"
-echo "game=$game_id  codegen tag=$cg_tag  cache tag=$cache_tag"
-
+echo "game=$game_id  codegen tag=$cg_tag"
 # --- stage AppDir ----------------------------------------------------------
 rm -rf -- "$appdir"
 mkdir -p "$appdir/usr/bin" "$appdir/usr/share/$PAYLOAD_DIR"
@@ -292,18 +287,13 @@ chmod 0755 "$appdir/AppRun"
 install -m 0644 "$root/packaging/linux/$DESKTOP_ID.desktop" \
     "$appdir/$DESKTOP_ID.desktop"
 
-for tree in assets bios mods; do
+for tree in assets bios; do
     [ -d "$build_dir/$tree" ] || { echo "build did not stage $tree/" >&2; exit 1; }
     cp -a "$build_dir/$tree" "$payload/$tree"
 done
 
-# The Mods page must never ship empty: assert the three preloaded packages.
-mod_manifests=$(find "$payload/mods" -name manifest.toml | wc -l)
-if [ "$mod_manifests" -ne "$EXPECTED_MODS" ]; then
-    echo "expected $EXPECTED_MODS preloaded mod manifests, found $mod_manifests" >&2
-    exit 1
-fi
-
+psx_add_mod_catalog --build-path "$build_dir" --stage "$payload" \
+                    --runtime-target psx-runtime
 # OpenBIOS must ride along with its notice; a retail BIOS must not.
 [ -f "$payload/bios/openbios.bin" ] || { echo "missing bundled OpenBIOS" >&2; exit 1; }
 [ -f "$payload/bios/OpenBIOS.LICENSE" ] || { echo "missing OpenBIOS notice" >&2; exit 1; }
@@ -313,53 +303,24 @@ if [ -f "$fw/runtime/licenses/libchdr-NOTICES.txt" ]; then
     cp "$fw/runtime/licenses/libchdr-NOTICES.txt" "$payload/licenses/"
 fi
 
-# --- prebuilt overlay cache ------------------------------------------------
-# Parity with the Windows packager: without a bundled cache every overlay runs
-# interpreted until the player's own cache fills. Linux shards are .so under
-# gcc/linux-x64/ (overlay_loader.c's OVERLAY_SHARED_EXT / PSX_OVERLAY_ARCH_ABI,
-# matched by compile_overlays.cache_arch_abi), and only THIS build's codegen
-# tag/flavor is shippable -- the loader ignores foreign tag namespaces. The
-# expected input is the same validated overlay_captures.json manifest used for
-# Windows shard releases; only the compiled shard format is platform-specific.
-cache_src=${OVERLAY_CACHE_DIR:-"$root/build-linux-cache/cache"}/$game_id
-if [ -d "$cache_src" ]; then
-    shards=$(find "$cache_src" -path "*/$cache_tag/*" \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) 2>/dev/null | wc -l)
-    if [ "$shards" -eq 0 ]; then
-        echo "Overlay cache at $cache_src holds no shards for this build's tag $cache_tag." >&2
-        echo "Rebuild it with compile_overlays.py against this runtime, or pass --allow-no-cache." >&2
-        [ "$allow_no_cache" = "1" ] || exit 1
-    else
-        mkdir -p "$payload/cache/$game_id"
-        ( cd "$cache_src" && find . -path "*/$cache_tag/*" -type f \
-            \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) \
-            -exec cp --parents {} "$payload/cache/$game_id/" \; )
-        so_count=$(find "$payload/cache" -name '*.so' | wc -l)
-        echo "Bundled overlay cache: $so_count native overlay .so"
-    fi
-elif [ "$allow_no_cache" = "1" ]; then
-    echo "No overlay cache at $cache_src - shipping without one (--allow-no-cache)" >&2
-else
-    cat >&2 <<EOF
-No overlay cache found at $cache_src, so this AppImage would ship without one
-and every player's first session would run overlays interpreted.
-
-Build one for this release's tag ($cache_tag) from the same validated
-overlay_captures.json manifest used for the Windows shard release. Use the
-Linux python/toolchain so the shards are .so under gcc/linux-x64:
-
-  PSX_OVERLAY_CACHE_DIR="$root/build-linux-cache/cache" \\
-  PSX_OVERLAY_CAPTURES="<coverage vault>/overlay_captures.json" \\
-  python3 $FRAMEWORK_DIR/tools/compile_overlays.py \\
-      --game-toml _release_game.toml \\
-      --recompiler $FRAMEWORK_DIR/recompiler/build-linux/psxrecomp-game \\
-      --runtime-include $FRAMEWORK_DIR/runtime/include --gcc \$(command -v gcc) \\
-      --flavor $overlay_flavor
-
-Then re-run this script. Pass --allow-no-cache to ship without one anyway.
-EOF
-    exit 1
-fi
-
+# --- prebuilt overlay cache + overlay toolchain ---------------------------
+# The cache namespace and toolchain layout are framework-owned. The cache source
+# root is the parent of the per-game directory, matching compile_overlays.py
+# --out-dir and the Windows packager.
+cache_src_root=${OVERLAY_CACHE_DIR:-"$root/build-linux-cache/cache"}
+case "$cache_src_root" in
+    *QUARANTINE*) echo "refusing quarantined overlay cache source: $cache_src_root" >&2; exit 1 ;;
+esac
+psx_add_overlay_cache --game-id "$game_id" \
+                      --cache-src-root "$cache_src_root" \
+                      --stage "$payload" \
+                      --cg-tag "$cg_tag"
+psx_add_overlay_toolchain --stage "$payload" \
+                          --recomp-dir "$(dirname -- "$recompiler_bin")" \
+                          --recomp-tools "$fw/tools" \
+                          --recomp-include "$fw/runtime/include" \
+                          --dl-cache "$tools_dir" \
+                          --platform linux
 cp "$player_toml" "$payload/game.toml"
 cp "$root/packaging/release/input.ini"      "$payload/input.ini"
 cp "$root/packaging/release/START_HERE.txt" "$payload/START_HERE.txt"
