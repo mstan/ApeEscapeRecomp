@@ -1,3 +1,34 @@
+# v0.5.0
+
+Renderer HLE is enabled in the Windows build to reduce slowdown in busy areas.
+It replaces an expensive rendering routine with native work while preserving
+its caller-visible results. The implementation is selected when building;
+there is no player setting to enable it.
+
+- Retains v0.4.0's interpolation, internal-resolution presets, PGXP, filtering,
+  and widescreen fixes.
+- Prevents false spin-freeze diagnostics while the game is still submitting
+  new drawing commands.
+- The HLE prototype held approximately 30 FPS at sampled checkpoints in
+  Crabby Beach, Primordial Ooze, Molten Lava, Sushi Temple, Frosty Retreat,
+  Dexter's Island, and Thick Jungle. Dexter improved from approximately
+  27-28 FPS to 30 FPS in the measured cases. These were short checkpoint
+  samples, not complete level playthroughs.
+- The updated renderer passed 256 ABI boundary comparisons. The Windows
+  production package was also checked with interpolation and widescreen.
+
+Please playtest the affected levels and report the exact location, selected
+mods, and hardware for any remaining slowdown, rendering errors, or crashes.
+Full-game completion and the absence of every possible slowdown are not
+claimed. Memory-card saves remain the way to transfer progress across older
+builds whose save-state format is rejected.
+
+The release contains one Windows x64 HLE package and its SHA-256 checksum.
+Game-specific HLE build inputs remain outside this source repository; the
+validated executable identity is recorded in packaging/release/runtime.json.
+
+---
+
 # v0.4.0
 
 Game-code interpolation replaces Frame Smoothing while retaining saved rate selections. Adds internal-resolution presets, PGXP geometry/perspective correction and filtering options. Fixes the GPU foreground classification behind flickering black wall polygons. The memory-card menu uses its native layout in widescreen. Late beach-ball appearance remains under investigation.
