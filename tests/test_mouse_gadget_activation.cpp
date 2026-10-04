@@ -49,6 +49,25 @@ int main() {
     now+=170*Ms;policy.update(now,host);policy.sample(now,x,y);CHECK(x==128 && y==128);
     CHECK(release());policy.control(now,now,psx::MouseControl::Right,false,false);
 
+    // Ordered physical edges may arrive together in a delayed SDL drain.
+    // The new session starts neutral, has useful fresh-motion amplitude, and
+    // cannot inherit a RIGHT hold from the preceding session.
+    now+=100*Ms;const uint64_t base=now;CHECK(press());
+    policy.control(base+6*Ms,base+6*Ms,psx::MouseControl::Right,true,false);
+    policy.motion(base+7*Ms,base+7*Ms,48,0);
+    policy.update(base+30*Ms,host);
+    CHECK(policy.control(base+20*Ms,base+30*Ms,psx::MouseControl::Left,false,false));
+    CHECK(!policy.captured());stick.bytes(base+30*Ms,x,y);CHECK(x==128 && y==128);
+    policy.update(base+31*Ms,host);
+    CHECK(policy.control(base+25*Ms,base+31*Ms,psx::MouseControl::Left,true,false));
+    policy.sample(base+31*Ms,x,y);CHECK(x==128 && y==128);
+    policy.motion(base+26*Ms,base+32*Ms,48,0);
+    policy.sample(base+32*Ms,x,y);CHECK(x>240 && y==128);
+    policy.control(base+27*Ms,base+33*Ms,psx::MouseControl::Right,false,false);
+    policy.sample(base+33*Ms,x,y);CHECK(x>240 && y==128);
+    now=base+200*Ms;policy.update(now,host);policy.sample(now,x,y);CHECK(x==128 && y==128);
+    CHECK(release());
+
     // Actual reducer and runtime policy together: useful amplitude and winding
     // in both senses while LEFT stays held, with no continuation on release.
     constexpr double Pi=3.14159265358979323846;
