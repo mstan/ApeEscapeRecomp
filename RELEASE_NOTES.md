@@ -14,13 +14,17 @@ there is no player setting to enable it.
   Dexter's Island, and Thick Jungle. Dexter improved from approximately
   27-28 FPS to 30 FPS in the measured cases. These were short checkpoint
   samples, not complete level playthroughs.
-- The updated renderer passed 256 ABI boundary comparisons. The Windows
-  production package was also checked with interpolation and widescreen.
+- The updated renderer passed 256 ABI boundary comparisons. Production
+  cold-boot smoke checks confirmed HLE activation with optional interpolation
+  and widescreen selected. Those checks do not establish full gameplay
+  compatibility for every enhancement combination.
 
 Please playtest the affected levels and report the exact location, selected
 mods, and hardware for any remaining slowdown, rendering errors, or crashes.
 Full-game completion and the absence of every possible slowdown are not
-claimed. Memory-card saves remain the way to transfer progress across older
+claimed. Cold-boot checks also recorded startup pacing/audio stalls whose
+cause has not been isolated; this release does not resolve every source of
+slowdown. Memory-card saves remain the way to transfer progress across older
 builds whose save-state format is rejected.
 
 The release contains one Windows x64 HLE package and its SHA-256 checksum.
