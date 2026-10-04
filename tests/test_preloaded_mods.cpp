@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 5) return fail("expected five package manifests");
+    if (manifest_count != 6) return fail("expected six package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
@@ -84,8 +84,8 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 5)
-        return fail("expected five package families");
+    if (manager.packages().size() != 6)
+        return fail("expected six package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -94,6 +94,26 @@ int main(int argc, char** argv) {
         default_plan.plugins.back().id != "psx.pgxp") {
         return fail("default catalog did not enable Skip FMVs and PGXP");
     }
+    // Stock v0.5.0 has no linked mouse plugin. An archive can declare the id
+    // but cannot install native code or invent the host motion/capture API.
+    if (!manager.set_feature_enabled(
+            "ape.enhancement.mouse-gadgets", "mouse-gadgets", true, &error))
+        return fail(error);
+    const auto unsupported_mouse = manager.resolve(kGameId, "", kDiscSha256);
+    if (unsupported_mouse.ok)
+        return fail("a package must not supply an unregistered native mouse plugin");
+    bool named_missing_mouse = false;
+    for (const auto& reason : unsupported_mouse.errors)
+        if (reason.find("trusted plugin is unavailable: ape.gadgets.mouse") != std::string::npos)
+            named_missing_mouse = true;
+    if (!named_missing_mouse)
+        return fail("stock-host rejection must name the missing mouse implementation");
+    std::cout << "stock mod compatibility: rejected missing ape.gadgets.mouse implementation\n";
+    if (!PSXRecompV4::mod_register_activation_plugin("ape.gadgets.mouse", no_op_plugin))
+        return fail("could not register test mouse plugin");
+    if (!manager.set_feature_enabled(
+            "ape.enhancement.mouse-gadgets", "mouse-gadgets", false, &error))
+        return fail(error);
     if (!manager.set_feature_enabled(
             "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error) ||
         !manager.set_feature_enabled(
@@ -191,11 +211,40 @@ int main(int argc, char** argv) {
     if (!disabled_plan.ok || !disabled_plan.writes.empty())
         return fail("Quick Gadget Select patched guest code while disabled");
 
+    if (!manager.set_feature_enabled("ape.enhancement.mouse-gadgets",
+                                     "mouse-gadgets", true, &error)) return fail(error);
+    const auto mouse_plan = manager.resolve(kGameId, "", kDiscSha256);
+    if (!mouse_plan.ok || !mouse_plan.writes.empty() || mouse_plan.plugins.size() != 1 ||
+        mouse_plan.plugins.front().id != "ape.gadgets.mouse")
+        return fail("mouse gadget plan must contain only the trusted input plugin");
+    for (const char* hold : {"Mouse3", "LeftAlt", "None"})
+        if (!manager.set_feature_option("ape.enhancement.mouse-gadgets", "mouse-gadgets",
+                                         "hold", hold, &error)) return fail(error);
+    if (manager.set_feature_option("ape.enhancement.mouse-gadgets", "mouse-gadgets",
+                                    "sensitivity", "401", &error))
+        return fail("out-of-range mouse sensitivity accepted");
+    if (!manager.set_feature_option("ape.enhancement.mouse-gadgets", "mouse-gadgets",
+                                     "sensitivity", "25", &error) ||
+        !manager.set_feature_option("ape.enhancement.mouse-gadgets", "mouse-gadgets",
+                                     "invert-x", "true", &error)) return fail(error);
+    if (!manager.save_state(&error)) return fail(error);
+    PSXRecompV4::ModPackageManager restored(root);
+    if (!restored.scan(&error) || !restored.load_state(&error) ||
+        restored.feature_option_value("ape.enhancement.mouse-gadgets", "mouse-gadgets", "sensitivity") != "25" ||
+        restored.feature_option_value("ape.enhancement.mouse-gadgets", "mouse-gadgets", "invert-x") != "true")
+        return fail("mouse options did not persist through catalog reload");
+    if (!manager.set_feature_enabled("ape.enhancement.mouse-gadgets", "mouse-gadgets",
+                                      false, &error)) return fail(error);
+    const auto mouse_off = manager.resolve(kGameId, "", kDiscSha256);
+    if (!mouse_off.ok || !mouse_off.plugins.empty() || !mouse_off.writes.empty())
+        return fail("disabled mouse feature changed the input plan");
+
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 5 packages, default PGXP, "
+    std::cout << "Ape Escape preloaded mods: 6 packages, default PGXP, "
                  "3 widescreen choices, 7 interpolated frame-rate choices, "
                  "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "
-                 "slingshot-block patch, stock guest code untouched by default\n";
+                 "slingshot-block patch, optional default-off mouse input, "
+                 "stock guest code untouched by default\n";
     return 0;
 }

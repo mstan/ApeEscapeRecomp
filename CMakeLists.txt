@@ -48,6 +48,7 @@ psxrecomp_add_runtime_target(psx-runtime
     GAME_GENERATED_FULL_C "${GAME_GENERATED_FULL}"
     GAME_GENERATED_DISPATCH_C "${GAME_GENERATED_DISPATCH}"
     EXTRAS_SOURCES ${APE_MOD_PLUGIN_SOURCES}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/input/ape_mouse_gadget_stick.cpp"
     DEBUG_PORT 4480
     WINDOW_TITLE "ApeEscapeRecomp"
     # No DEFAULT_BIOS_PATH: an absolute build-machine path must never be baked
@@ -65,6 +66,30 @@ psxrecomp_add_runtime_target(psx-runtime
 )
 
 if(BUILD_TESTING)
+    add_executable(ape_mouse_gadget_stick_test
+        tests/test_mouse_gadget_stick.cpp
+        src/input/ape_mouse_gadget_stick.cpp
+        "${PSXRECOMP_ROOT}/runtime/src/psx_stick.c")
+    target_include_directories(ape_mouse_gadget_stick_test PRIVATE
+        src/input "${PSXRECOMP_ROOT}/runtime/include")
+    if(NOT MSVC)
+        target_link_libraries(ape_mouse_gadget_stick_test PRIVATE m)
+    endif()
+    add_test(NAME ape_mouse_gadget_stick_test COMMAND ape_mouse_gadget_stick_test)
+    add_executable(ape_mouse_gadget_activation_test
+        tests/test_mouse_gadget_activation.cpp
+        src/input/ape_mouse_gadget_stick.cpp
+        "${PSXRECOMP_ROOT}/runtime/src/local_mouse_policy.cpp"
+        "${PSXRECOMP_ROOT}/runtime/src/psx_stick.c")
+    target_include_directories(ape_mouse_gadget_activation_test PRIVATE
+        src/input "${PSXRECOMP_ROOT}/runtime/include" "${PSXRECOMP_ROOT}/runtime/src")
+    if(NOT MSVC)
+        target_link_libraries(ape_mouse_gadget_activation_test PRIVATE m)
+    endif()
+    add_test(NAME ape_mouse_gadget_activation_test COMMAND ape_mouse_gadget_activation_test)
+    add_executable(ape_mouse_gadget_context_test tests/test_mouse_gadget_context.cpp)
+    target_include_directories(ape_mouse_gadget_context_test PRIVATE src/input)
+    add_test(NAME ape_mouse_gadget_context_test COMMAND ape_mouse_gadget_context_test)
     add_executable(ape_stick_response_test
         tests/test_stick_response.c
         "${PSXRECOMP_ROOT}/runtime/src/psx_stick.c"
