@@ -1,17 +1,16 @@
 # Optional mouse gadget controls
 
-This feature is off by default. The LEFT-held revision passes six focused tests,
-six native SIO checks and three host binding tests on each SDL backend, plus
-five registered game tests after a full incremental SDL3 Release link. Its
-changed SDL adapters compile with SDL2 and SDL3; the unchanged main/plugin
-path retains the preceding paired-source compilation. Static import/profile
-checks pass for the new private candidate. The preceding candidate passed a
-visible-window boot smoke. The owner
-reported that its mouse gestures worked pretty well. Physical acceptance of
-this revised activation behavior and the complete interruption matrix remain
-pending. It requires the paired psxrecomp
-local-mouse policy API; the release framework pin alone does not contain it.
-The current LEFT-held revision has not been launched for physical validation.
+This feature is off by default. Earlier private paired-source validation
+passed six focused tests, six native SIO checks, three host-fold tests on
+each SDL backend and five registered game tests after a full SDL3 Release
+link. Those runs used an explicit framework root at reviewed feature head
+12d98c220216a671f41cea6dccecd68c8dfa7042; the public game gitlink then
+remained at its two-commit ancestor 50ec9191. This newly reconciled private
+gitlink and documentation have not been rebuilt or rerun. Earlier isolated
+candidates had boot smoke evidence, and the owner reported useful gestures.
+Physical LEFT-held gadget use and the complete interruption matrix for this
+final pair remain pending. It requires the paired native local-mouse policy
+and trusted game plugin; stock v0.5.0 does not contain that implementation.
 An ordinary mod archive cannot add the missing native implementation to stock
 v0.5.0; a release containing the paired runtime hooks and game plugin is required.
 
@@ -183,14 +182,31 @@ Synthetic circles cannot establish gadget usefulness or device feel.
 
 Game base: v0.5.0, a8e219ab48e140a84d588374bcd2ca43dda70d70.
 Runtime base: 065888f50f9131839bcbbc8814debf58b4624b16, the release's
-actual gitlink and packaging record. `framework_pins.txt` is reconciled to
-that base; f7f0ad1097178d5df01a16eafe030f435565ed64 was stale.
-Their only runtime difference is freeze diagnostics, with the relevant input
-and plugin interfaces unchanged.
+actual gitlink and `packaging/release/runtime.json` record. That packaging
+file is historical release provenance and remains byte-for-byte unchanged.
+The former f7f0ad1097178d5df01a16eafe030f435565ed64 pin was stale.
 
-The final feature gitlink is intentionally pending the paired runtime PR.
-Before updating it, establish reachability through the configured framework
-upstream, update all actual pin records together, and repeat checkout/build/CI
-on those final bytes. A feature commit reachable only from a contributor fork
-does not satisfy that upstream gate. Current framework master also differs
-from the release's existing mod APIs; any rebase must be reviewed and retested.
+This private game's gitlink and `framework_pins.txt` both pin
+`c18a0553120790b3fb5d23733d4057c821b3d2e2`. Its feature code is identical to runtime PR502's
+reviewed head `12d98c220216a671f41cea6dccecd68c8dfa7042`; the private
+framework commit adds only corrected paired-validation documentation.
+That reviewed head is two commits ahead of the previous game pin 50ec9191:
+the non-Windows missed-LEFT-release/focus-regain correction, then the
+SDL2/SDL3 focus-arm cleanup. Neither fix is dropped from this pair.
+
+The private documentation commit is unpublished. A fresh checkout through
+the unchanged `.gitmodules` URL must resolve the exact final pin before
+build/test/CI validation can establish an upstream-ready pair. Availability
+of `refs/pull/502/head` alone is an interim development route and does not
+establish a stable merge pin. The transport report records actual fetch and
+checkout outcomes; no fork URL or local object fallback is substituted for
+the configured upstream. Revalidate checkout/build/CI after the final pin
+is made available through the reviewed upstream route.
+
+Current master requires separate compatibility work. Preserve current
+`g_hidden_window` and `HOST_KEYMAP_CAPTURE_MARK` behavior, resolve native
+controller sources before one mouse hook on the final local P1 report, and
+retain whole-vector native takeover and reset boundaries. The older
+maintainer port and PR495 are not merged into this release-based pair.
+The entire master range, generalized policy arbitration, stock-installable
+mod ABI and public-quality/physical acceptance remain outside this stage.
