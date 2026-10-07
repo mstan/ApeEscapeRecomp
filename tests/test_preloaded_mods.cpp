@@ -32,14 +32,31 @@ int fail(const std::string& message) {
 
 void no_op_plugin() {}
 
+fs::path fixture_path(fs::path path) {
+#ifdef _WIN32
+    // The runner's isolated TEMP may exceed MAX_PATH once package names are
+    // appended. Normalize before opting into the extended Windows namespace;
+    // the fixture still resides in that same owned temporary directory.
+    path = fs::absolute(path).lexically_normal();
+    path.make_preferred();
+    const auto& native = path.native();
+    if (native.compare(0, 4, L"\\\\?\\") == 0) return path;
+    if (native.compare(0, 2, L"\\\\") == 0)
+        return fs::path(L"\\\\?\\UNC\\" + native.substr(2));
+    return fs::path(L"\\\\?\\" + native);
+#else
+    return path;
+#endif
+}
+
 }  // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     if (argc != 2) return fail("expected the preloaded mods root");
 
-    const fs::path source(argv[1]);
+    const fs::path source = fixture_path(argv[1]);
     const fs::path root =
-        fs::temp_directory_path() / "apeescape-preloaded-mods-test";
+        fixture_path(fs::temp_directory_path() / "apeescape-preloaded-mods-test");
     std::error_code ec;
     fs::remove_all(root, ec);
     fs::copy(source, root, fs::copy_options::recursive);
@@ -247,4 +264,6 @@ int main(int argc, char** argv) {
                  "slingshot-block patch, optional default-off mouse input, "
                  "stock guest code untouched by default\n";
     return 0;
+} catch (const std::exception& error) {
+    return fail(std::string("unexpected catalog test exception: ") + error.what());
 }
