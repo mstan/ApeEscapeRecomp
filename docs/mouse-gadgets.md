@@ -3,7 +3,8 @@
 This feature is off by default and requires the trusted game plugin and the
 runtime's unified local controller/mouse input layer. The v0.5.1 integration
 retains upstream's guest-cycle slowdown fix (`guest_cycle_scale = 2`) and its
-exact framework, UI, networking and rewind dependency pins. Stock v0.5.1 still
+UI, networking and rewind dependency pins. Its runtime pin adds only an MSVC
+reentrant-tokenizer compatibility fix to upstream's v0.5.1 runtime. Stock v0.5.1 still
 needs a rebuilt executable containing this game plugin; a standalone mod archive
 cannot add native gesture code to that executable.
 
@@ -183,9 +184,10 @@ Synthetic circles cannot establish gadget usefulness or device feel.
 This PR merges `release/v0.5.0-renderer-hle` at
 `e6fd930d7e02026e912d0a6ccb021a8a2abee406`, which now contains the v0.5.1
 slowdown fix and Linux release-tool updates. The branch name is historical.
-The runtime gitlink and `framework_pins.txt` both retain upstream's exact
-`cbfd24fda50a557891c13b7cbf3fd46ef5ab9112` pin. The UI, networking and rewind
-pins also match upstream. The old `bbde12bb` release-runtime pin is not restored.
+The runtime gitlink and `framework_pins.txt` both use
+`32af6384a3f80782156a5c278c9a91f9e2c20926`, a descendant of upstream's
+`cbfd24fda50a557891c13b7cbf3fd46ef5ab9112` pin with only an MSVC `strtok_r` to
+`strtok_s` compatibility mapping. The UI, networking and rewind pins match upstream. The old `bbde12bb` release-runtime pin is not restored.
 `game.toml`, release version/provenance and Linux packaging tools retain the
 upstream v0.5.1 changes.
 
@@ -199,6 +201,7 @@ OpenBIOS backend is used for local build validation; retail BIOS source is
 optional and no longer distributed in the framework repository.
 
 Use the normal configured upstream framework URL and initialize the pinned
-submodules. The runtime dependency is already published; no companion unmerged
-runtime PR or Fluff approval is needed. Automated checks do not establish live
+submodules. The companion runtime portability PR must keep the exact tested descendant
+reachable from the configured framework URL; a rewritten merge requires repinning
+and revalidation. Automated checks do not establish live
 capture behavior, non-Windows controller/mouse feel or gameplay acceptance.
