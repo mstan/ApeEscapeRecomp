@@ -1,14 +1,16 @@
 # Optional mouse gadget controls
 
-This feature is off by default and requires the paired runtime hooks and trusted
-game plugin. The release backport uses one ordered controller-source/mouse input
-layer. Its Windows x64 automated matrix passed 32 executions across 18 test
-names, including SDL2/SDL3 debug-on/off host input, native SIO checks and a full
-SDL3 Release build/link with five game tests. Physical LEFT-held gadget feel,
-live capture/interruption behavior and gameplay remain untested on this pair.
-Stock v0.5.0 lacks the paired implementation; an ordinary mod archive cannot
-add it to that executable. A build containing both runtime and game changes
-is required.
+This feature is off by default and requires the trusted game plugin and the
+runtime's unified local controller/mouse input layer. The v0.5.1 integration
+retains upstream's guest-cycle slowdown fix (`guest_cycle_scale = 2`) and its
+exact framework, UI, networking and rewind dependency pins. Stock v0.5.1 still
+needs a rebuilt executable containing this game plugin; a standalone mod archive
+cannot add native gesture code to that executable.
+
+The earlier v0.5.0 pair passed its automated matrix. That historical result is
+not validation of this v0.5.1 pair. Current build/test results are recorded in
+PR #21. Physical controller/mouse feel and live gadget/interruption gameplay
+remain untested on the final updated pair.
 
 ## Use and tuning
 
@@ -176,25 +178,25 @@ Synthetic circles cannot establish gadget usefulness or device feel.
 
 ## Bases and paired delivery
 
-Game base: v0.5.0, `a8e219ab48e140a84d588374bcd2ca43dda70d70`.
-Runtime release base: `065888f50f9131839bcbbc8814debf58b4624b16`.
-`packaging/release/runtime.json` records historical release binary provenance
-and remains unchanged.
+This PR merges `release/v0.5.0-renderer-hle` at
+`e6fd930d7e02026e912d0a6ccb021a8a2abee406`, which now contains the v0.5.1
+slowdown fix and Linux release-tool updates. The branch name is historical.
+The runtime gitlink and `framework_pins.txt` both retain upstream's exact
+`cbfd24fda50a557891c13b7cbf3fd46ef5ab9112` pin. The UI, networking and rewind
+pins also match upstream. The old `bbde12bb` release-runtime pin is not restored.
+`game.toml`, release version/provenance and Linux packaging tools retain the
+upstream v0.5.1 changes.
 
-The `psxrecomp-v4` gitlink and `framework_pins.txt` both pin runtime
-`bbde12bb1c41ffe3fbf95c695eed5daa38c36cf0`. The companion
-[runtime PR #502](https://github.com/RetroPortingToolKit/psxrecomp/pull/502)
-retains the original held-mouse controls and missed-release fix, then adopts
-the unified resolver from #510 and its required offline controller-source
-dependency. Unrelated master changes and duplicated mouse commits are omitted.
-The release `g_hidden_window` and `HOST_KEYMAP_CAPTURE_MARK` guards remain.
+That runtime already provides the unified controller-source/mouse layer from
+#510 and its later title-pad transform stage. The game plugin uses its existing
+mouse-policy ABI. Native/source presentation and any title transform resolve
+before the single P1 mouse fold; whole-vector right-stick takeover, consumed
+activation/Escape and lifecycle guards remain in effect. No extra mouse hook or
+controller override is inserted by this game PR. The current runtime's committed
+OpenBIOS backend is used for local build validation; retail BIOS source is
+optional and no longer distributed in the framework repository.
 
-Merge the runtime PR first so this exact commit is reachable through the
-framework's configured `.gitmodules` URL, then merge this game pin. Before
-that merge, a development checkout can explicitly fetch the exact commit from
-`https://github.com/pneuma-io/psxrecomp.git` and use `PSXRECOMP_ROOT` to point at
-it. This is an explicit development source, not a replacement for the configured
-upstream URL or a claim that the dependency is already merged. No BIOS or
-game C regeneration is required. Hosted CI, physical controller/mouse feel,
-live gadget use and full gameplay acceptance are separate from the passing
-automated matrix.
+Use the normal configured upstream framework URL and initialize the pinned
+submodules. The runtime dependency is already published; no companion unmerged
+runtime PR or Fluff approval is needed. Automated checks do not establish live
+capture behavior, non-Windows controller/mouse feel or gameplay acceptance.

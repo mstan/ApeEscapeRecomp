@@ -45,12 +45,16 @@ if (Test-Path -LiteralPath $RuntimeManifestPath) {
     if ($RuntimeManifest.version -ne $Version) {
         throw "Release version differs from packaging/release/runtime.json"
     }
-    if (-not $PrebuiltExecutable) {
-        throw "This HLE release requires -PrebuiltExecutable from the validated external build. See packaging/release/runtime.json."
-    }
-    $PrebuiltExecutable = (Resolve-Path -LiteralPath $PrebuiltExecutable).Path
-    if ((Get-FileHash -LiteralPath $PrebuiltExecutable -Algorithm SHA256).Hash -ne $RuntimeManifest.exe_sha256) {
-        throw "Prebuilt executable does not match the validated release SHA-256"
+    if ($RuntimeManifest.external_hle_inputs) {
+        if (-not $PrebuiltExecutable) {
+            throw "This HLE release requires -PrebuiltExecutable from the validated external build. See packaging/release/runtime.json."
+        }
+        $PrebuiltExecutable = (Resolve-Path -LiteralPath $PrebuiltExecutable).Path
+        if ((Get-FileHash -LiteralPath $PrebuiltExecutable -Algorithm SHA256).Hash -ne $RuntimeManifest.exe_sha256) {
+            throw "Prebuilt executable does not match the validated release SHA-256"
+        }
+    } elseif ($PrebuiltExecutable) {
+        throw "This source-built release does not accept -PrebuiltExecutable"
     }
 }
 if ($FrameworkDir) {

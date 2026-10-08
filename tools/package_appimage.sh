@@ -209,6 +209,15 @@ fi
 if [ "$skip_build" = "0" ]; then
     generator=Ninja
     command -v ninja >/dev/null 2>&1 || generator="Unix Makefiles"
+    # WSL normally appends the Windows PATH. CMake's generic `find_program`
+    # can therefore cache a pyenv-win shim as PSX_PYTHON even though Linux
+    # cannot execute it. Resolve a native interpreter here and pass it to both
+    # the framework's build-tool hook and CMake's Python package discovery.
+    build_python=${PSX_PYTHON:-$(command -v python3 || true)}
+    [ -n "$build_python" ] && "$build_python" -c 'import sys' >/dev/null 2>&1 || {
+        echo "A native Python 3 interpreter is required." >&2
+        exit 1
+    }
     # --build-id=none keeps the ELF a function of its sources: the default
     # build-id is a hash that also folds in link-time inputs and makes two
     # otherwise identical builds differ.
@@ -216,6 +225,8 @@ if [ "$skip_build" = "0" ]; then
         -DCMAKE_BUILD_TYPE=Release \
         -DPSX_SDL_BACKEND=SDL3 \
         -DPSX_DEBUG_TOOLS=OFF \
+        -DPSX_PYTHON="$build_python" \
+        -DPython3_EXECUTABLE="$build_python" \
         -DCMAKE_EXE_LINKER_FLAGS="-Wl,--build-id=none"
     cmake --build "$build_dir" --target psx-runtime -j "$jobs"
 fi
@@ -262,12 +273,17 @@ game_id=$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' 
 
 recompiler_bin=$fw/$bios_build/psxrecomp-game
 [ -x "$recompiler_bin" ] || recompiler_bin=$fw/recompiler/build-linux/psxrecomp-game
-if [ ! -x "$recompiler_bin" ]; then
+recompiler_dir=$(dirname -- "$recompiler_bin")
+bios_emitter=$recompiler_dir/psxrecomp-bios
+if [ ! -x "$recompiler_bin" ] || [ ! -x "$bios_emitter" ]; then
     recompiler_build=$(dirname -- "$recompiler_bin")
     gen=Ninja
     command -v ninja >/dev/null 2>&1 || gen="Unix Makefiles"
     cmake -S "$fw/recompiler" -B "$recompiler_build" -G "$gen" -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$recompiler_build" --target psxrecomp-game -j "$jobs"
+    # The staged player toolchain needs both executables. Building only the
+    # game recompiler passes AOT generation but fails later when staging tries
+    # to include the BIOS emitter for player-side overlay compilation.
+    cmake --build "$recompiler_build" --target psxrecomp-game psxrecomp-bios -j "$jobs"
 fi
 cg_tag=$(psx_overlay_cg_tag \
     --runtime-include "$fw/runtime/include" \
@@ -312,6 +328,8 @@ cp "$fw/LICENSE" "$payload/licenses/psxrecomp-LICENSE"
 for doc in VERSION RELEASE_NOTES.md framework_pins.txt BUILD_PROVENANCE.json; do
     [ ! -f "$root/$doc" ] || cp "$root/$doc" "$payload/"
 done
+[ ! -f "$root/packaging/release/runtime.json" ] || \
+    cp "$root/packaging/release/runtime.json" "$payload/RUNTIME_BUILD.json"
 
 # --- prebuilt overlay cache + overlay toolchain ---------------------------
 # The cache namespace and toolchain layout are framework-owned. The cache source
@@ -350,9 +368,9 @@ ln -s "$DESKTOP_ID.png" "$appdir/.DirIcon"
 
 # --- pinned tooling --------------------------------------------------------
 linuxdeploy_url=https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-linuxdeploy_sha=36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62
+linuxdeploy_sha=8aea8da0f7f7039d2a2cecb14657d752a222a5e1d3825caeef186c82f751cdd1
 appimagetool_url=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-appimagetool_sha=a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0
+appimagetool_sha=95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6
 
 mkdir -p "$tools_dir"
 fetch_tool() {

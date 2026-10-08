@@ -1,11 +1,10 @@
 {
-  "version": "v0.5.0",
-  "renderer_backend": "hle",
-  "selection": "build-time",
+  "version": "v0.5.1",
+  "renderer_backend": "source",
+  "selection": "source-build",
   "debug_tools": false,
-  "exe_sha256": "c872213e502cc1ccde55b35aeaa482d1e18f53dd7ebd5b0f53303c5342577d3b",
-  "game_code_base": "301dc98503309334399d9cb8441ba8e67ff46d8d",
-  "framework_commit": "065888f50f9131839bcbbc8814debf58b4624b16",
-  "external_hle_inputs": true,
-  "note": "The validated HLE implementation and relink recipe are maintained outside this source repository. Ordinary source builds retain the LLE reference; this release packager requires the HLE executable above."
+  "game_code_base": "8541f9488e9e9ef423f3ea9ee9fcb1f46506fdc8",
+  "framework_commit": "cbfd24fda50a557891c13b7cbf3fd46ef5ab9112",
+  "external_hle_inputs": false,
+  "note": "Windows and Linux are built from the published title and framework sources. The guest cycle scale replaces the v0.5.0 Windows-only external renderer dependency for the measured slowdown fix."
 }
