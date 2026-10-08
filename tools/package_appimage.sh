@@ -209,6 +209,15 @@ fi
 if [ "$skip_build" = "0" ]; then
     generator=Ninja
     command -v ninja >/dev/null 2>&1 || generator="Unix Makefiles"
+    # WSL normally appends the Windows PATH. CMake's generic `find_program`
+    # can therefore cache a pyenv-win shim as PSX_PYTHON even though Linux
+    # cannot execute it. Resolve a native interpreter here and pass it to both
+    # the framework's build-tool hook and CMake's Python package discovery.
+    build_python=${PSX_PYTHON:-$(command -v python3 || true)}
+    [ -n "$build_python" ] && "$build_python" -c 'import sys' >/dev/null 2>&1 || {
+        echo "A native Python 3 interpreter is required." >&2
+        exit 1
+    }
     # --build-id=none keeps the ELF a function of its sources: the default
     # build-id is a hash that also folds in link-time inputs and makes two
     # otherwise identical builds differ.
@@ -216,6 +225,8 @@ if [ "$skip_build" = "0" ]; then
         -DCMAKE_BUILD_TYPE=Release \
         -DPSX_SDL_BACKEND=SDL3 \
         -DPSX_DEBUG_TOOLS=OFF \
+        -DPSX_PYTHON="$build_python" \
+        -DPython3_EXECUTABLE="$build_python" \
         -DCMAKE_EXE_LINKER_FLAGS="-Wl,--build-id=none"
     cmake --build "$build_dir" --target psx-runtime -j "$jobs"
 fi
