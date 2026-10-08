@@ -39,6 +39,11 @@ bios_hle = true
 # A scale of 2 is the smallest supported adjustment and keeps VBlank, timers,
 # CD, SPU and DMA on the original hardware clock.
 guest_cycle_scale = 2
+# Only during in-level play. Phase byte 0x800F447C: 0 title/attract, 7 stage
+# select + Professor briefing, 1 load, 24 level flyover, 25 warp-in, 3 play,
+# 4/5 at an area doorway. Menus and cutscenes paced by work-per-frame flip at
+# 60 Hz when overclocked, so everything but 3 stays faithful.
+guest_cycle_scale_gate = { addr = 0x800F447C, size = 1, value = 3 }
 
 [video]
 # Auto-skip FMVs: when a streaming movie (XA audio + MDEC) is detected, run it
