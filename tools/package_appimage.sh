@@ -273,12 +273,17 @@ game_id=$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' 
 
 recompiler_bin=$fw/$bios_build/psxrecomp-game
 [ -x "$recompiler_bin" ] || recompiler_bin=$fw/recompiler/build-linux/psxrecomp-game
-if [ ! -x "$recompiler_bin" ]; then
+recompiler_dir=$(dirname -- "$recompiler_bin")
+bios_emitter=$recompiler_dir/psxrecomp-bios
+if [ ! -x "$recompiler_bin" ] || [ ! -x "$bios_emitter" ]; then
     recompiler_build=$(dirname -- "$recompiler_bin")
     gen=Ninja
     command -v ninja >/dev/null 2>&1 || gen="Unix Makefiles"
     cmake -S "$fw/recompiler" -B "$recompiler_build" -G "$gen" -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$recompiler_build" --target psxrecomp-game -j "$jobs"
+    # The staged player toolchain needs both executables. Building only the
+    # game recompiler passes AOT generation but fails later when staging tries
+    # to include the BIOS emitter for player-side overlay compilation.
+    cmake --build "$recompiler_build" --target psxrecomp-game psxrecomp-bios -j "$jobs"
 fi
 cg_tag=$(psx_overlay_cg_tag \
     --runtime-include "$fw/runtime/include" \
