@@ -312,6 +312,8 @@ cp "$fw/LICENSE" "$payload/licenses/psxrecomp-LICENSE"
 for doc in VERSION RELEASE_NOTES.md framework_pins.txt BUILD_PROVENANCE.json; do
     [ ! -f "$root/$doc" ] || cp "$root/$doc" "$payload/"
 done
+[ ! -f "$root/packaging/release/runtime.json" ] || \
+    cp "$root/packaging/release/runtime.json" "$payload/RUNTIME_BUILD.json"
 
 # --- prebuilt overlay cache + overlay toolchain ---------------------------
 # The cache namespace and toolchain layout are framework-owned. The cache source
