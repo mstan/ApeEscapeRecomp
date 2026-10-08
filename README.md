@@ -74,7 +74,7 @@ so treat it as a very playable preview rather than a certified full playthrough.
 
 ### Built-in mods
 
-The launcher's **Mods** page includes four Ape-specific bundled enhancements:
+The launcher's **Mods** page includes these bundled enhancements:
 
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
@@ -88,6 +88,9 @@ The launcher's **Mods** page includes four Ape-specific bundled enhancements:
 - **Skip FMVs** ends movies through the game's normal completion path.
 - **Quick Gadget Select**, contributed by mthsk, recreates the later Ape
   Escape quick gadget switching flow for the face-button gadget menu.
+- **Mouse Gadget Controls** optionally maps mouse strokes and circles to the
+  right stick. It is off by default and uses the pinned runtime's unified input layer.
+  See [controls, tuning and validation status](docs/mouse-gadgets.md).
 
 The widescreen mod uses Ape Escape's stable GTE projection-and-stretch path
 for a wider 3D field of view. HUD/UI proportion correction is enabled for its
