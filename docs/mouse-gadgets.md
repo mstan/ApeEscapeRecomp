@@ -1,18 +1,14 @@
 # Optional mouse gadget controls
 
-This feature is off by default. Earlier private paired-source validation
-passed six focused tests, six native SIO checks, three host-fold tests on
-each SDL backend and five registered game tests after a full SDL3 Release
-link. Those runs used an explicit framework root at reviewed feature head
-12d98c220216a671f41cea6dccecd68c8dfa7042; the public game gitlink then
-remained at its two-commit ancestor 50ec9191. This newly reconciled private
-gitlink and documentation have not been rebuilt or rerun. Earlier isolated
-candidates had boot smoke evidence, and the owner reported useful gestures.
-Physical LEFT-held gadget use and the complete interruption matrix for this
-final pair remain pending. It requires the paired native local-mouse policy
-and trusted game plugin; stock v0.5.0 does not contain that implementation.
-An ordinary mod archive cannot add the missing native implementation to stock
-v0.5.0; a release containing the paired runtime hooks and game plugin is required.
+This feature is off by default and requires the paired runtime hooks and trusted
+game plugin. The release backport uses one ordered controller-source/mouse input
+layer. Its Windows x64 automated matrix passed 32 executions across 18 test
+names, including SDL2/SDL3 debug-on/off host input, native SIO checks and a full
+SDL3 Release build/link with five game tests. Physical LEFT-held gadget feel,
+live capture/interruption behavior and gameplay remain untested on this pair.
+Stock v0.5.0 lacks the paired implementation; an ordinary mod archive cannot
+add it to that executable. A build containing both runtime and game changes
+is required.
 
 ## Use and tuning
 
@@ -180,33 +176,25 @@ Synthetic circles cannot establish gadget usefulness or device feel.
 
 ## Bases and paired delivery
 
-Game base: v0.5.0, a8e219ab48e140a84d588374bcd2ca43dda70d70.
-Runtime base: 065888f50f9131839bcbbc8814debf58b4624b16, the release's
-actual gitlink and `packaging/release/runtime.json` record. That packaging
-file is historical release provenance and remains byte-for-byte unchanged.
-The former f7f0ad1097178d5df01a16eafe030f435565ed64 pin was stale.
+Game base: v0.5.0, `a8e219ab48e140a84d588374bcd2ca43dda70d70`.
+Runtime release base: `065888f50f9131839bcbbc8814debf58b4624b16`.
+`packaging/release/runtime.json` records historical release binary provenance
+and remains unchanged.
 
-This private game's gitlink and `framework_pins.txt` both pin
-`c18a0553120790b3fb5d23733d4057c821b3d2e2`. Its feature code is identical to runtime PR502's
-reviewed head `12d98c220216a671f41cea6dccecd68c8dfa7042`; the private
-framework commit adds only corrected paired-validation documentation.
-That reviewed head is two commits ahead of the previous game pin 50ec9191:
-the non-Windows missed-LEFT-release/focus-regain correction, then the
-SDL2/SDL3 focus-arm cleanup. Neither fix is dropped from this pair.
+The `psxrecomp-v4` gitlink and `framework_pins.txt` both pin runtime
+`bbde12bb1c41ffe3fbf95c695eed5daa38c36cf0`. The companion
+[runtime PR #502](https://github.com/RetroPortingToolKit/psxrecomp/pull/502)
+retains the original held-mouse controls and missed-release fix, then adopts
+the unified resolver from #510 and its required offline controller-source
+dependency. Unrelated master changes and duplicated mouse commits are omitted.
+The release `g_hidden_window` and `HOST_KEYMAP_CAPTURE_MARK` guards remain.
 
-The private documentation commit is unpublished. A fresh checkout through
-the unchanged `.gitmodules` URL must resolve the exact final pin before
-build/test/CI validation can establish an upstream-ready pair. Availability
-of `refs/pull/502/head` alone is an interim development route and does not
-establish a stable merge pin. The transport report records actual fetch and
-checkout outcomes; no fork URL or local object fallback is substituted for
-the configured upstream. Revalidate checkout/build/CI after the final pin
-is made available through the reviewed upstream route.
-
-Current master requires separate compatibility work. Preserve current
-`g_hidden_window` and `HOST_KEYMAP_CAPTURE_MARK` behavior, resolve native
-controller sources before one mouse hook on the final local P1 report, and
-retain whole-vector native takeover and reset boundaries. The older
-maintainer port and PR495 are not merged into this release-based pair.
-The entire master range, generalized policy arbitration, stock-installable
-mod ABI and public-quality/physical acceptance remain outside this stage.
+Merge the runtime PR first so this exact commit is reachable through the
+framework's configured `.gitmodules` URL, then merge this game pin. Before
+that merge, a development checkout can explicitly fetch the exact commit from
+`https://github.com/pneuma-io/psxrecomp.git` and use `PSXRECOMP_ROOT` to point at
+it. This is an explicit development source, not a replacement for the configured
+upstream URL or a claim that the dependency is already merged. No BIOS or
+game C regeneration is required. Hosted CI, physical controller/mouse feel,
+live gadget use and full gameplay acceptance are separate from the passing
+automated matrix.
