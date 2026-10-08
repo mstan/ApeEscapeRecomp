@@ -30,9 +30,9 @@ build glue for running Ape Escape on the PSXRecomp framework. The game's MIPS
 code is machine-translated ("recompiled") ahead of time into native C, then
 compiled into a real Windows program that runs the game's own logic on a
 faithful simulation of the PS1 hardware (GPU, SPU, GTE, memory cards) plus the
-real, recompiled PS1 BIOS. The v0.5.1 release uses the framework's title timing
-scale to keep crowded areas at their original 30 FPS cadence while hardware-
-timed devices remain on the PlayStation clock.
+real, recompiled PS1 BIOS. Since v0.5.1 the framework's title timing scale
+keeps crowded areas at their original 30 FPS cadence while hardware-timed
+devices remain on the PlayStation clock; v0.5.2 applies it only during play.
 
 It does **not** contain the Ape Escape disc image, a retail PS1 BIOS, generated
 game code, or any decompiled game C. Release builds include the MIT-licensed
@@ -52,7 +52,7 @@ Important files:
 
 ## Status
 
-**Current release — `v0.5.1`.** Ape Escape **boots from the PS1 BIOS and
+**Current release — `v0.5.2`.** Ape Escape **boots from the PS1 BIOS and
 plays** — through the intro, the title, and into gameplay, with dual-analog
 controller input including **L3/R3 stick clicks** (added in v0.0.3), a
 **controls fix** so the analog stick no longer spins the camera (v0.0.5),
@@ -164,3 +164,8 @@ Ape Escape uses the smallest guest-cycle adjustment that removed the measured
 their original cadence. Windows and Linux now ship from the same published
 source build. See [release notes](RELEASE_NOTES.md) for the A/B measurements,
 save/load checks, and coverage limits.
+
+## v0.5.2 gameplay-only timing scale
+
+The v0.5.1 timing scale now applies only while a level is being played. Menus,
+the stage-select briefing and level intros run at their original pacing again.
