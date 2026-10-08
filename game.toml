@@ -34,6 +34,12 @@ memcard_dir = "saves"
 # service the HLE tier doesn't implement. Env PSX_BIOS_HLE overrides at launch.
 bios_hle = true
 
+[timing]
+# Crowded scenes miss their 30 FPS deadline with faithful instruction charging.
+# A scale of 2 is the smallest supported adjustment and keeps VBlank, timers,
+# CD, SPU and DMA on the original hardware clock.
+guest_cycle_scale = 2
+
 [video]
 # Auto-skip FMVs: when a streaming movie (XA audio + MDEC) is detected, run it
 # uncapped and muted so it blows through in a fraction of a second instead of
