@@ -1,3 +1,31 @@
+# v0.5.1
+
+This release fixes the remaining crowded-scene slowdown with the shared guest
+cycle scaling added to PSXRecomp. Ape Escape now charges recompiled CPU work at
+half the previous guest-cycle rate while VBlank, timers, CD, SPU, and DMA stay
+on the original PlayStation clock.
+
+- Crabby Beach improved from 29.06 FPS with 18 delayed frames in 8.05 seconds
+  to 30.06 FPS with every measured game frame taking exactly two VBlanks.
+- Fourteen idle and movement samples across Dexter's Island, Primordial Ooze,
+  Crabby Beach, Molten Lava, Sushi Temple, Frosty Retreat, and Thick Jungle held
+  29.92-30.16 FPS and 59.60-60.08 guest VBlanks per second without delayed or
+  one-VBlank gameplay frames.
+- Current-format save-state save/load, four world-selector area transitions,
+  populated memory-card reads, and active audio passed without softlocks,
+  memory-card aborts, audio underruns, or audio overflow drops.
+- Scale 2 is the smallest supported adjustment that fixes the measured misses;
+  settled gameplay remains capped at the original 30 FPS cadence.
+- Windows and Linux are now built from the same published source and framework
+  commit. The v0.5.0 Windows-only external renderer executable is no longer a
+  release input.
+
+These measurements cover saved checkpoints and selected transitions rather
+than a complete playthrough. The separate Fast Loading transition-noise and
+Crumbling Castle investigation remains open.
+
+---
+
 # v0.5.0
 
 Renderer HLE is enabled in the Windows build to reduce slowdown in busy areas.
