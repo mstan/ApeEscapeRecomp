@@ -142,7 +142,9 @@ bindings, alternate bindings, P2 and simultaneous controller actions are checked
 before folding. The private compile harness also builds the real adapter,
 plugin/reducer and main translation unit without linking or running the game.
 
-The five focused targets passed with MSVC 19.50, CMake 4.1.2 and Ninja 1.12.1
+The following results describe the earlier v0.5.0 validation. The current
+v0.5.1 matrix is recorded separately in PR #21 and the retained evidence packet.
+The six focused targets passed with MSVC 19.50, CMake 4.1.2 and Ninja 1.12.1
 on the paired release-base copies. This includes existing stick-response and
 catalog checks, plus reducer timing/geometry, source context and generic
 capture policy regressions. Sixty direction-correction cases cover quiet-gap
