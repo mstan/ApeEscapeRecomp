@@ -1,3 +1,23 @@
+# v0.5.2
+
+v0.5.1's crowded-scene fix sped up all game code, which also made menus and
+cutscenes that pace themselves by their own workload flip frames too early.
+v0.5.2 applies the guest-cycle scale only during in-level play, using the
+game's own screen-phase byte; everything else runs on the original timing.
+
+Real-time A/B on the same build and route:
+
+- Title / startup menu: frame timing identical to the unscaled game
+  (v0.5.1 differed).
+- Stage-select Professor briefing: 63 single-VBlank frame flips, against 64
+  unscaled and 417 in v0.5.1.
+- Dexter's Island while moving: no slowdown frames, as in v0.5.1 (16 unscaled).
+
+Level intro flyovers and warp-ins also run unscaled. Not yet verified: the
+stage-clear results screen and in-level boss cutscenes.
+
+---
+
 # v0.5.1
 
 This release fixes the remaining crowded-scene slowdown with the shared guest
