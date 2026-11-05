@@ -7,3 +7,5 @@ This archive contains no game disc, retail BIOS, personal settings or saves.
 Read RELEASE_NOTES.md for validation coverage and known limitations.
 
 Internal Resolution is enabled at 4x for fresh settings. Choose 1x–32x in Mods; hardware and GPU-memory limits may clamp larger choices. Your saved choices are retained.
+
+Dithering is in Mods > Image Filtering > Dithering (OpenGL). Enable Image Filtering to choose Off, Native (PS1) or Fine; Game default keeps the title setting.

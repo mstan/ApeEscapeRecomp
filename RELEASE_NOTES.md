@@ -1,6 +1,14 @@
 # Ape Escape release notes
 
-## v0.5.5 ? video controls restored
+## v0.5.6 - dithering control
+
+- Add Dithering to **Mods > Image Filtering**: Game default, Off, Native (PS1) and Fine. These choices control the existing OpenGL renderer; other backends retain the preference for the next OpenGL session.
+- Preserve the game's dithering default and explicit saved mod choices. Legacy `on`, `scaled`, `off` and `fine` preferences migrate when no newer feature selection exists.
+- Include the shared engine's latest quicksave and hotkey corrections, while retaining the restored Settings controls, default Fit to screen and the excluded loading mods.
+
+Enable Image Filtering to choose a dithering mode. Game default keeps the title's setting. The public release uses the shared audited source-build, original-disc overlay cache and selective runtime PGO pipeline. Save states remain specific to their build; native memory cards are preserved.
+
+## v0.5.5 - video controls restored
 
 - Restore Software/OpenGL/Vulkan selection, render/present threading and VSync including VRR in Settings. Vulkan is compiled into the Windows release again; OpenGL remains the default.
 - Complete Mods with dynamic-resolution controls and exact supersampling, Raw CRT output, independent PGXP geometry/perspective switches, and OpenGL FXAA, bloom and custom `.pfx` shaders.
