@@ -26,6 +26,24 @@ description = "Follow precision through the game's integer vertex calculations."
 type = "boolean"
 default = "true"
 
+[[option]]
+feature = "pgxp"
+id = "geometry"
+label = "Geometry correction"
+description = "Use subpixel vertex positions to reduce polygon wobble."
+group = "Visual"
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "pgxp"
+id = "perspective"
+label = "Perspective textures"
+description = "Correct texture perspective to reduce warping, independently of geometry correction."
+group = "Visual"
+type = "boolean"
+default = "true"
+
 [[plugin]]
 feature = "pgxp"
 id = "psx.pgxp"

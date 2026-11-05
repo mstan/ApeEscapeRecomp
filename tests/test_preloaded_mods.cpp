@@ -95,10 +95,11 @@ int main(int argc, char** argv) {
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
-        default_plan.plugins.size() != 2 ||
+        default_plan.plugins.size() != 3 ||
         default_plan.plugins.front().id != "ape.fmv.skip" ||
+        default_plan.plugins[1].id != "ape.widescreen.adaptive" ||
         default_plan.plugins.back().id != "psx.pgxp") {
-        return fail("default catalog did not enable Skip FMVs and PGXP");
+        return fail("default catalog did not enable Skip FMVs, Fit to screen and PGXP");
     }
     if (!manager.set_feature_enabled(
             "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error) ||
