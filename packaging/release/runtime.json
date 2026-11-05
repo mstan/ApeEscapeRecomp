@@ -1,10 +1,10 @@
 {
-  "version": "v0.5.3",
+  "version": "v0.5.5",
   "renderer_backend": "source",
   "selection": "source-build",
   "debug_tools": false,
-  "game_code_base": "ec44be1c77e041dfadbe51dbdd3d16168e4a8e22",
-  "framework_commit": "ffbd9d1ca4ee698866a2a9d7c58c3cc29a77f111",
+  "game_code_base": "7981d1f67f61415b10053c3977e9ba565e17685f",
+  "framework_commit": "5f664a69e653b02e09135f2ad339ff963e142002",
   "external_hle_inputs": false,
-  "note": "Source-built renderer with the existing gameplay-only cycle-scale gate and audited native frame waits. No external HLE inputs."
+  "note": "Source-built renderer, restored Settings and picture-mod controls, Vulkan enabled. Shared public release pipeline with selective runtime PGO; no external HLE inputs."
 }

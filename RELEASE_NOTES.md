@@ -1,5 +1,14 @@
 # Ape Escape release notes
 
+## v0.5.5 ? video controls restored
+
+- Restore Software/OpenGL/Vulkan selection, render/present threading and VSync including VRR in Settings. Vulkan is compiled into the Windows release again; OpenGL remains the default.
+- Complete Mods with dynamic-resolution controls and exact supersampling, Raw CRT output, independent PGXP geometry/perspective switches, and OpenGL FXAA, bloom and custom `.pfx` shaders.
+- Migrate legacy video preferences only when no explicit mod choice exists. Fresh widescreen profiles use Fit to screen; saved player choices remain authoritative.
+- Keep failed frame interpolation/presentation controls, graphics presets/reset, hardware redetect and audio sample-rate controls removed. CD Speed and Fast Loading packages remain excluded.
+
+The shared public release pipeline builds the renderer and audited original-disc overlay cache from source, with selective runtime PGO. Existing memory cards remain supported; save states are specific to their build.
+
 ## v0.5.4 — shared optimization release
 
 Fresh settings enable Internal Resolution at 4x. The Mods selector offers 1x through 32x; saved choices are preserved, and GPU texture and memory limits still apply. Disabling the mod selects native resolution.
