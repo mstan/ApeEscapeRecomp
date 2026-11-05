@@ -8,7 +8,7 @@ version_file = "packaging/release/VERSION"
 player_game_toml = "game.toml"
 
 [build]
-cmake_args = ["-DPSX_RECOMP_UI=ON", "-DPSX_ENABLE_VULKAN=OFF"]
+cmake_args = ["-DPSX_RECOMP_UI=ON", "-DPSX_ENABLE_VULKAN=ON"]
 
 [aot]
 mode = "cache"

@@ -54,17 +54,17 @@ guest_cycle_scale_gate = { addr = 0x800F447C, size = 1, value = 3 }
 auto_skip_fmv = false
 offer_skip_fmv = false
 
-# Ape owns optional temporal blending through its default-off Frame Smoothing
-# mod. Hide generic Display controls and ignore stale settings.toml values.
+# Frame interpolation is excluded from the public catalog. Keep its generic
+# controls hidden and ignore stale settings.toml values.
 offer_frame_interpolation = false
 
 # OpenGL renderer by default (validated for Ape: native-wide widescreen + the
-# GL compositor perf fix). The launcher's Renderer setting still offers Software.
+# GL compositor perf fix). Settings also offers Software and Vulkan.
 renderer = "opengl"
+offer_vulkan = true
 
-# Settings > Display exposes Native, 720p, 1080p, 1440p, 4K, 5K, 8K and
-# Match display. Start with the same 4K preset as Spider-Man; players can
-# lower it to leave more rendering time for intermediate frames.
+# The Internal Resolution mod owns render scale, supersampling and dynamic
+# resolution. This is the title baseline used by its Game default choice.
 internal_resolution = "4k"
 antialiasing = true
 texture_filtering = "bilinear"

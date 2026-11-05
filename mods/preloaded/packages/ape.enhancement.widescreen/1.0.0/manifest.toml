@@ -16,7 +16,7 @@ id = "widescreen"
 name = "Widescreen"
 description = "Enable Ape Escape's widescreen rendering and choose a fixed or resize-driven aspect."
 group = "Display"
-default_enabled = false
+default_enabled = true
 
 [[option]]
 feature = "widescreen"
@@ -25,7 +25,7 @@ label = "Aspect ratio"
 description = "Adaptive follows the live window size from 4:3 through 21:9."
 group = "Display"
 type = "choice"
-default = "16:9"
+default = "adaptive"
 
 [[option.choice]]
 value = "16:9"
@@ -37,7 +37,7 @@ label = "21:9"
 
 [[option.choice]]
 value = "adaptive"
-label = "Adaptive"
+label = "Fit to screen"
 
 [[plugin]]
 feature = "widescreen"

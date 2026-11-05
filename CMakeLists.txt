@@ -39,8 +39,7 @@ file(GLOB APE_MOD_PLUGIN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/*.cpp")
 
-# Ape Escape's trusted, game-owned mod catalog. Every feature stays disabled
-# until selected on the launcher's Mods page.
+# Ape Escape's trusted mod catalog. Saved choices override fresh defaults.
 #
 # The FRAMEWORK stages this: PRELOADED_MODS_DIR below hands it to
 # psxrecomp_add_runtime_target(), which wipes <exe-dir>/mods/bundled and copies
