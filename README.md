@@ -52,7 +52,7 @@ Important files:
 
 ## Status
 
-**Current release — `v0.5.2`.** Ape Escape **boots from the PS1 BIOS and
+**Current release — `v0.5.6`.** Ape Escape **boots from the PS1 BIOS and
 plays** — through the intro, the title, and into gameplay, with dual-analog
 controller input including **L3/R3 stick clicks** (added in v0.0.3), a
 **controls fix** so the analog stick no longer spins the camera (v0.0.5),
