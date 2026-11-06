@@ -45,10 +45,8 @@ int main(int argc, char** argv) {
     fs::copy(source, root, fs::copy_options::recursive);
     if (fs::exists(source / "packages/ape.enhancement.frame-smoothing"))
         return fail("frame smoothing must stay outside the active catalog");
-    // Keep exercising the preserved development implementation without
-    // shipping it or exposing interpolation in the owner's playtest.
-    fs::copy(fs::path(argv[2]) / "packages", root / "packages",
-             fs::copy_options::recursive);
+    if (fs::exists(fs::path(argv[2]) / "packages/ape.enhancement.frame-smoothing"))
+        return fail("retired frame smoothing must not remain in development");
 
     size_t manifest_count = 0;
     for (const fs::directory_entry& entry :
@@ -65,20 +63,13 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 5) return fail("expected five package manifests");
+    if (manifest_count != 4) return fail("expected four package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
              "ape.widescreen.16-9",
              "ape.widescreen.21-9",
              "ape.widescreen.adaptive",
-             "ape.frame-smoothing.60",
-             "ape.frame-smoothing.90",
-             "ape.frame-smoothing.120",
-             "ape.frame-smoothing.144",
-             "ape.frame-smoothing.165",
-             "ape.frame-smoothing.240",
-             "ape.frame-smoothing.display",
              "ape.fmv.skip",
              "ape.gadgets.quick-select",
              "psx.pgxp"}) {
@@ -90,8 +81,8 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 5)
-        return fail("expected five package families");
+    if (manager.packages().size() != 4)
+        return fail("expected four package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -129,39 +120,13 @@ int main(int argc, char** argv) {
     }
 
     if (!manager.set_feature_enabled(
-            "ape.enhancement.widescreen", "widescreen", false, &error) ||
-        !manager.set_feature_enabled(
-            "ape.enhancement.frame-smoothing", "temporal-blending", true, &error)) {
+            "ape.enhancement.widescreen", "widescreen", false, &error))
         return fail(error);
-    }
-    for (const auto& [choice, plugin] :
-         {std::pair{"60", "ape.frame-smoothing.60"},
-          std::pair{"90", "ape.frame-smoothing.90"},
-          std::pair{"120", "ape.frame-smoothing.120"},
-          std::pair{"144", "ape.frame-smoothing.144"},
-          std::pair{"165", "ape.frame-smoothing.165"},
-          std::pair{"240", "ape.frame-smoothing.240"},
-          std::pair{"display", "ape.frame-smoothing.display"}}) {
-        if (!manager.set_feature_option(
-                "ape.enhancement.frame-smoothing", "temporal-blending",
-                "rate", choice, &error)) {
-            return fail(error);
-        }
-        const auto fps_plan = manager.resolve(kGameId, "", kDiscSha256);
-        if (!fps_plan.ok || !fps_plan.writes.empty() ||
-            fps_plan.plugins.size() != 1 ||
-            fps_plan.plugins.front().id != plugin) {
-            return fail(std::string("wrong interpolated frame-rate plan for ") +
-                        choice);
-        }
-    }
-    if (!manager.set_feature_enabled(
-            "ape.enhancement.frame-smoothing", "temporal-blending", false, &error) ||
-        !manager.set_feature_enabled(
-            "ape.enhancement.quick-gadget-select", "quick-gadget-select",
-            true, &error)) {
-        return fail(error);
-    }
+    if (manager.set_feature_enabled("ape.enhancement.frame-smoothing",
+            "temporal-blending", true, &error))
+        return fail("retired interpolation unexpectedly resolved");
+    if (!manager.set_feature_enabled("ape.enhancement.quick-gadget-select",
+            "quick-gadget-select", true, &error)) return fail(error);
 
     /*
      * Quick Gadget Select is one vblank plugin plus one main_exe instruction
@@ -199,8 +164,8 @@ int main(int argc, char** argv) {
         return fail("Quick Gadget Select patched guest code while disabled");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 5 packages, default PGXP, "
-                 "3 widescreen choices, 7 interpolated frame-rate choices, "
+    std::cout << "Ape Escape preloaded mods: 4 packages, default PGXP, "
+                 "3 widescreen choices, retired interpolation absent, "
                  "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "
                  "slingshot-block patch, stock guest code untouched by default\n";

@@ -18,8 +18,6 @@ bios_config = "psxrecomp-v4/bios/SCPH1001.toml"
 # bios_thunks = "seeds/apeescape_bios_thunks.txt"  # optional; add once BIOS thunks are inventoried
 out_dir = "generated"
 strict = true
-mod_function_entry_funcs = ["0x8005DEE0"]
-mod_instruction_sites = ["0x8005C078"]
 
 [runtime]
 debug_port = 4480
