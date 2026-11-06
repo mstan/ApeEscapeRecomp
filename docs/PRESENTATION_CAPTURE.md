@@ -39,6 +39,19 @@ even if the replacement value agrees. Each copied source batch owns the observed
 lifetime. This does not yet qualify all allocation/reuse paths or terrain
 lifetimes, and restore currently cuts capture history rather than reconstructing
 live identities. The report includes constructor and witnessed-batch counts.
+The skeleton update at `80015504` overwrites its root matrix when composing
+the camera at `800156C8`. Paired observations before that call and at its return
+`800156D0` retain the original world root separately. A batch admits that world
+root only when the lifetime, matrix pointer, resulting view root and camera all
+still agree with the recorded operation. This uses original matrix provenance;
+there is no fitted camera or decomposition of a camera-composed root as an
+object pose. `root_domain` is 1 for that binding, 2 for authored typed-world
+transforms, and 0 for an unqualified root. Bone hierarchy and other camera
+domains still require their own scene-producer integration.
+Leaf projection scopes belong to their original guest call frames and survive
+nested draws, other guest stacks and ordering-table submissions. Stack/return
+registers delimit the activation only; they never identify corresponding
+vertices or objects. Return hooks retire each scope. Reset discards all scopes.
 Resource versions, remaining geometry producers (including other subdivision
 paths), lifetime events, camera
 domains and display deadlines still need qualification before this data can

@@ -34,6 +34,7 @@ struct Batch {
     uint64_t lifetime;
     uint32_t descriptor, asset, bone, vertex;
     uint32_t local[6], matrix[8], root[8], camera[8];
+    uint32_t world_root[8], root_domain; // 0 unknown, 1 original pre-camera, 2 authored typed-world
     uint32_t native_xy[3], native_z[3], projection[3];
     uint32_t input[6], kind, source_vertex[3], vertex_count;
     uint64_t parents[2]; /* Subdivision: original edge sources, depth guard 164 */
@@ -78,6 +79,12 @@ struct SourceRecord {
 std::unique_ptr<SourceRecord[]> source_records;
 std::mutex published_mutex;
 Scope scope;
+uint32_t scope_event = 0;
+// These leaf projectors may be suspended by a guest interrupt. Their live
+// descriptor belongs to the original guest call frame, not the last hook run.
+// Stack/return registers only delimit capture activation; vertex/object identities
+// remain explicit source indices and constructor lifetimes.
+std::unordered_map<uint64_t,Scope> projection_scopes;
 std::atomic<bool> active{false};
 uint64_t serial = 0;
 uint64_t next_source = 4;
@@ -85,6 +92,14 @@ uint64_t next_lifetime = 1;
 struct Lifetime { uint64_t token; uint32_t asset, constructor; };
 std::unordered_map<uint32_t,Lifetime> lifetimes;
 std::atomic<uint64_t> constructions{0}, lifetime_batches{0};
+struct Root {
+    uint64_t lifetime = 0;
+    uint32_t descriptor = 0, pointer = 0;
+    uint32_t world[8]{}, view[8]{}, camera[8]{};
+};
+std::unordered_map<uint32_t,Root> pending_roots;
+std::unordered_map<uint32_t,Root> roots;
+std::atomic<uint64_t> world_root_batches{0};
 std::atomic<uint64_t> submissions{0}, batches{0}, rejected{0}, overflows{0};
 std::atomic<uint64_t> mapped{0}, partial{0}, unknown{0}, invalid_lists{0}, tag_failures{0};
 std::atomic<uint64_t> rigid_batches{0};
@@ -104,8 +119,9 @@ void read_words(uint32_t address, uint32_t* out, unsigned count) {
     for (unsigned i = 0; i < count; ++i) out[i] = psx_mod_read_word(address + i * 4);
 }
 void reset() {
-    scope = {}; open = active.load(); serial = 0;
+    scope = {}; scope_event = 0; open = active.load(); serial = 0;
     lifetimes.clear();
+    roots.clear(); pending_roots.clear(); projection_scopes.clear();
     if (writing) writing->clear(0);
     std::lock_guard<std::mutex> lock(published_mutex);
     if (published) published->clear(0);
@@ -130,6 +146,7 @@ void activate() {
     terrain_vertices = 0;
     subdivision_vertices = 0;
     constructions = lifetime_batches = 0;
+    world_root_batches = 0;
     for (bool& reported : reported_tuple) reported = false;
     reported_typed = reported_height = false;
     if (!pgxp_set_source_tracking(1)) return;
@@ -156,6 +173,44 @@ uint64_t lifetime(uint32_t descriptor, uint32_t asset) {
     const auto entry=lifetimes.find(descriptor & 0x1FFFFFFFu);
     return entry!=lifetimes.end() && entry->second.asset==asset &&
         pgxp_load_source(descriptor,asset)==entry->second.token ? entry->second.token : 0;
+}
+void root_before_camera(CPUState* cpu, uint32_t) {
+    const uint32_t frame=cpu->gpr[29];pending_roots.erase(frame);
+    if (!open) return;
+    const uint32_t descriptor=cpu->gpr[19], pointer=cpu->gpr[20];
+    if (!ram(descriptor,24,4) || !ram(pointer,32,4) ||
+        psx_mod_read_word(descriptor+20)!=pointer) { ++writing->rejected; return; }
+    const uint64_t life=lifetime(descriptor,psx_mod_read_word(descriptor));
+    if (!life) return;
+    if (pending_roots.size()==256) { ++writing->overflow; return; }
+    Root r;r.lifetime=life;r.descriptor=descriptor;r.pointer=pointer;
+    read_words(pointer,r.world,8);read_words(0x800E78C0u,r.camera,8);
+    pending_roots[frame]=r;
+}
+void root_after_camera(CPUState* cpu, uint32_t) {
+    const auto pending=pending_roots.find(cpu->gpr[29]);
+    if (!open || pending==pending_roots.end()) return;
+    const Root saved=pending->second;pending_roots.erase(pending);
+    if (cpu->gpr[19]!=saved.descriptor || cpu->gpr[20]!=saved.pointer ||
+        lifetime(saved.descriptor,psx_mod_read_word(saved.descriptor))!=saved.lifetime) {
+        ++writing->rejected; return;
+    }
+    Root r=saved;read_words(r.pointer,r.view,8);
+    roots[r.descriptor & 0x1FFFFFFFu]=r;
+}
+uint64_t projection_frame(const CPUState* cpu) {
+    return uint64_t(cpu->gpr[29])<<32 | cpu->gpr[31];
+}
+void scope_begin(CPUState* cpu,uint32_t pc) {
+    projection_scopes.erase(projection_frame(cpu));scope={};scope_event=pc;
+}
+void scope_bind(CPUState* cpu) {
+    if (projection_scopes.size()==256) { ++writing->overflow; return; }
+    projection_scopes[projection_frame(cpu)]=scope;
+}
+void scope_resume(CPUState* cpu) {
+    const auto current=projection_scopes.find(projection_frame(cpu));
+    scope=current!=projection_scopes.end() ? current->second : Scope{};
 }
 bool retain_source(uint64_t token, unsigned depth = 0) {
     if (!token || depth > 8) return false;
@@ -231,7 +286,7 @@ void capture_list(uint32_t head) {
 }
 void finish(CPUState* cpu, uint32_t) {
     if (!open) return;
-    open = false; scope = {};
+    open = false; scope = {}; scope_event = 0x80028CD0u;
     capture_list(cpu->gpr[4]);
     batches += writing->projected; rejected += writing->rejected;
     overflows += writing->overflow; ++submissions;
@@ -241,8 +296,8 @@ void finish(CPUState* cpu, uint32_t) {
     writing.swap(published);
     writing->clear(++serial); open = true;
 }
-void enter(CPUState* cpu, uint32_t) {
-    scope = {};
+void enter(CPUState* cpu, uint32_t pc) {
+    scope_begin(cpu,pc);
     if (!open) return;
     ++writing->skeletons;
     const uint32_t descriptor = cpu->gpr[4];
@@ -261,9 +316,9 @@ void enter(CPUState* cpu, uint32_t) {
         !ram(s.spans, s.bones * 12, 2) || !ram(s.vertices, 8, 4)) {
         ++writing->rejected; return;
     }
-    scope = s;
+    scope = s;scope_bind(cpu);
 }
-void leave(CPUState*, uint32_t) { scope = {}; }
+void leave(CPUState* cpu, uint32_t pc) { projection_scopes.erase(projection_frame(cpu));scope={};scope_event=pc; }
 bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
              const uint32_t* input = nullptr, unsigned count = 3,
              const uint32_t* indices = nullptr, unsigned fifo = 0) {
@@ -304,6 +359,18 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
         for (unsigned i = 0; i < 3; ++i) b.root[5+i] = uint32_t(int32_t(scope.origin[i]));
     }
     read_words(0x800E78C0u, b.camera, 8);
+    if (scope.kind==TypedWorld) {
+        std::memcpy(b.world_root,b.root,sizeof b.root);b.root_domain=2;
+    } else if (scope.kind==Skeletal && b.lifetime) {
+        const auto root=roots.find(scope.descriptor & 0x1FFFFFFFu);
+        if (root!=roots.end() && root->second.lifetime==b.lifetime &&
+            root->second.pointer==scope.matrices &&
+            !std::memcmp(root->second.view,b.root,sizeof b.root) &&
+            !std::memcmp(root->second.camera,b.camera,sizeof b.camera)) {
+            std::memcpy(b.world_root,root->second.world,sizeof b.world_root);
+            b.root_domain=1;++world_root_batches;
+        }
+    }
     if (writing->batches.size() == MaxBatches) { ++writing->overflow; return false; }
     for (unsigned i = 0; i < count; ++i)
         if (!pgxp_tag_gte_source(fifo+i, b.native_xy[i], next_source + i)) ++tag_failures;
@@ -317,6 +384,7 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
 }
 void projected(CPUState* cpu, uint32_t) {
     if (!open) return;
+    scope_resume(cpu);
     if (!scope.descriptor || scope.rigid) { ++writing->rejected; return; }
     const uint32_t bone = cpu->gpr[11], vertex = cpu->gpr[5];
     const uint32_t local = cpu->gpr[3];
@@ -335,7 +403,7 @@ void projected(CPUState* cpu, uint32_t) {
     capture(cpu, bone, vertex, local);
 }
 void enter_rigid(CPUState* cpu, uint32_t pc) {
-    scope = {};
+    scope_begin(cpu,pc);
     if (!open) return;
     const uint32_t descriptor = cpu->gpr[4];
     if (!ram(descriptor, 16, 4)) { ++writing->rejected; return; }
@@ -354,10 +422,11 @@ void enter_rigid(CPUState* cpu, uint32_t pc) {
         !ram(s.output, padded * 8, 4) || !ram(s.matrices, 32, 4)) {
         ++writing->rejected; return;
     }
-    scope = s;
+    scope = s;scope_bind(cpu);
 }
 void projected_rigid(CPUState* cpu, uint32_t) {
     if (!open) return;
+    scope_resume(cpu);
     const uint32_t vertex = cpu->gpr[7], local = cpu->gpr[3];
     if (!scope.descriptor || !scope.rigid || vertex >= scope.count || vertex % 3 ||
         local != scope.vertices + vertex * 8 || cpu->gpr[6] != scope.output + vertex * 8 ||
@@ -368,8 +437,8 @@ void projected_rigid(CPUState* cpu, uint32_t) {
         if (scope.kind == World) ++world_batches; else ++rigid_batches;
     }
 }
-void enter_typed(CPUState* cpu, uint32_t) {
-    scope = {};
+void enter_typed(CPUState* cpu, uint32_t pc) {
+    scope_begin(cpu,pc);
     if (!open) return;
     const uint32_t descriptor = cpu->gpr[4];
     if (!ram(descriptor, 32, 4)) { ++writing->rejected; return; }
@@ -387,10 +456,11 @@ void enter_typed(CPUState* cpu, uint32_t) {
     if (s.count > 8192 || !ram(s.vertices, padded * 8, 4) || !ram(s.output, padded * 8, 4)) {
         ++writing->rejected; return;
     }
-    scope = s;
+    scope = s;scope_bind(cpu);
 }
 void projected_typed(CPUState* cpu, uint32_t pc) {
     if (!open) return;
+    scope_resume(cpu);
     const uint32_t vertex = cpu->gpr[9];
     const uint32_t turn = pc == 0x80016394u ? 1u : pc == 0x80016514u ? 2u :
         pc == 0x80016690u ? 3u : 0u;
@@ -400,9 +470,10 @@ void projected_typed(CPUState* cpu, uint32_t pc) {
         cpu->gpr[5] != scope.output + vertex * 8 || cpu->gpr[13] != scope.count || !ram(local, 24, 4)) {
         if (!reported_typed) {
             reported_typed = true;
-            std::fprintf(stderr, "Ape typed scope mismatch pc=%08X turn=%u expected_turn=%u vertex=%u count=%u/%u source=%08X/%08X output=%08X/%08X\n",
+            std::fprintf(stderr, "Ape typed scope mismatch pc=%08X turn=%u expected_turn=%u vertex=%u count=%u/%u source=%08X/%08X output=%08X/%08X scope_event=%08X ra=%08X\n",
                 pc, turn, scope.quarter_turn, vertex, cpu->gpr[13], scope.count,
-                local, scope.vertices+vertex*8, cpu->gpr[5], scope.output+vertex*8);
+                local, scope.vertices+vertex*8, cpu->gpr[5], scope.output+vertex*8,
+                scope_event, cpu->gpr[31]);
         }
         ++writing->rejected; return;
     }
@@ -529,7 +600,9 @@ int command(const char* args, char* reply, int cap) {
         "\"world_batches\":%llu,\"typed_batches\":%llu,"
         "\"terrain_vertices\":%llu,\"kind\":%u,\"vertex_count\":%u,"
         "\"subdivision_vertices\":%llu,"
-        "\"constructors\":%llu,\"lifetime_batches\":%llu,\"lifetime\":%llu,"
+        "\"constructors\":%llu,\"lifetime_batches\":%llu,\"lifetime\":\"0x%016llX\","
+        "\"world_root_batches\":%llu,\"root_domain\":%u,"
+        "\"root_x\":%d,\"world_root_x\":%d,"
         "\"lifetime_qualified\":false}",
         int(active.load()), (unsigned long long)submissions.load(),
         (unsigned long long)batches.load(), (unsigned long long)rejected.load(),
@@ -546,7 +619,9 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)terrain_vertices.load(), b ? b->kind : 0, b ? b->vertex_count : 0,
         (unsigned long long)subdivision_vertices.load(),
         (unsigned long long)constructions.load(), (unsigned long long)lifetime_batches.load(),
-        b ? (unsigned long long)b->lifetime : 0);
+        b ? (unsigned long long)b->lifetime : 0,
+        (unsigned long long)world_root_batches.load(), b ? b->root_domain : 0,
+        b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0);
     return 1;
 }
 }
@@ -554,6 +629,8 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_activation_plugin(Plugin, activate);
     psx_mod_register_session_reset_plugin(Plugin, deactivate);
     psx_mod_register_savestate_plugin(Plugin, reset);
+    psx_mod_register_instruction_plugin(Plugin, 0x800156C8u, 0x0C00BFD4u, root_before_camera);
+    psx_mod_register_instruction_plugin(Plugin, 0x800156D0u, 0x12E0001Fu, root_after_camera);
     psx_mod_register_instruction_plugin(Plugin, 0x80015AC4u, 0x94A20008u, constructed);
     psx_mod_register_instruction_plugin(Plugin, 0x80015B34u, 0x94A20008u, constructed);
     psx_mod_register_instruction_plugin(Plugin, 0x80015BA8u, 0x94A20008u, constructed);
@@ -574,6 +651,7 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_instruction_plugin(Plugin, 0x80016514u, 0x94E20018u, projected_typed);
     psx_mod_register_instruction_plugin(Plugin, 0x80016690u, 0x24E40018u, projected_typed);
     psx_mod_register_instruction_plugin(Plugin, 0x8001680Cu, 0x24830018u, projected_typed);
+    psx_mod_register_instruction_plugin(Plugin, 0x800168C0u, 0x03E00008u, leave);
     psx_mod_register_instruction_plugin(Plugin, 0x80043E68u, 0x26040001u, projected_terrain);
     psx_mod_register_instruction_plugin(Plugin, 0x80043F18u, 0x26040001u, projected_terrain);
     psx_mod_register_instruction_plugin(Plugin, 0x80043FC8u, 0x26240250u, projected_terrain);

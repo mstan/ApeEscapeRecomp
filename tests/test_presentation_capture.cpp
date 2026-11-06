@@ -73,7 +73,7 @@ extern "C" uint16_t psx_mod_read_half(uint32_t address) {
 }
 int main() {
     assert(activation && restore && session_reset && query);
-    assert(hooks().size()==34 && hooks().at(0x80016B44).word==0xE88C0000);
+    assert(hooks().size()==37 && hooks().at(0x80016B44).word==0xE88C0000);
     assert(report().find("\"active\":0")!=std::string::npos);
     activation();CPUState cpu{};
     const uint32_t d=0x80001000, asset=0x80002000, v=0x80003000, m=0x80004000, spans=0x80005000;
@@ -84,6 +84,10 @@ int main() {
     word(asset+4,1);word(spans,3); // one bone, three vertices, first index zero
     for(unsigned i=0;i<6;++i)word(v+4*i, i+1);
     for (uint32_t descriptor : {d,d+32}) {
+        cpu.gpr[19]=descriptor;cpu.gpr[20]=m;
+        call(0x800156C8,cpu);
+        word(m+20,psx_mod_read_word(m+20)+123); // original camera composition overwrites root
+        call(0x800156D0,cpu);
         cpu.gpr[4]=descriptor;call(0x80016A74,cpu);
         cpu.gpr[4]=0x800E7D00;cpu.gpr[3]=v;cpu.gpr[5]=0;
         cpu.gpr[11]=0;cpu.gpr[15]=32;cpu.gpr[16]=m;cpu.gpr[25]=v;
@@ -109,8 +113,13 @@ int main() {
     assert(first.find("\"rejected\":2")!=std::string::npos);
     assert(first.find("\"descriptor\":2147487744")!=std::string::npos);
     assert(second.find("\"descriptor\":2147487776")!=std::string::npos);
-    assert(first.find("\"lifetime\":9223372036854775809")!=std::string::npos);
-    assert(second.find("\"lifetime\":9223372036854775810")!=std::string::npos);
+    assert(first.find("\"lifetime\":\"0x8000000000000001\"")!=std::string::npos);
+    assert(second.find("\"lifetime\":\"0x8000000000000002\"")!=std::string::npos);
+    assert(first.find("\"root_domain\":1")!=std::string::npos);
+    assert(second.find("\"root_domain\":1")!=std::string::npos);
+    assert(first.find("\"world_root_batches\":2")!=std::string::npos);
+    assert(first.find("\"root_x\":123,\"world_root_x\":0")!=std::string::npos);
+    assert(second.find("\"root_x\":246,\"world_root_x\":123")!=std::string::npos);
     // Reconstructing the same descriptor/header starts a new lifetime; a DMA
     // overwrite invalidates its witness even when the resulting value agrees.
     cpu.gpr[4]=d;cpu.gpr[5]=asset;call(0x80015AC4,cpu);
@@ -121,7 +130,8 @@ int main() {
     cpu.gpr[11]=0;cpu.gpr[15]=32;cpu.gpr[16]=m;cpu.gpr[25]=v;
     call(0x80016B44,cpu);
     cpu.gpr[4]=ot;call(0x80028CD0,cpu);
-    assert(report().find("\"lifetime\":0")!=std::string::npos);
+    assert(report().find("\"lifetime\":\"0x0000000000000000\"")!=std::string::npos);
+    assert(report().find("\"root_domain\":0")!=std::string::npos);
     assert(first.find("\"native_xy\":100")!=std::string::npos);
     assert(first.find("\"lifetime_qualified\":false")!=std::string::npos);
     assert(first.find("\"mapped_polygons\":1")!=std::string::npos);
@@ -226,6 +236,22 @@ int main() {
         call(pc,cpu);
         assert(sources[descriptor]>>(63));
     }
+    // A DrawOTag submission and a nested projection on another original guest
+    // stack must not erase the suspended outer projector's descriptor.
+    word(asset+4,3u<<16);word(d+12,v);word(d+32+12,v);
+    cpu.gpr[29]=0x100;cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;
+    call(0x800161C4,cpu);
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    cpu.gpr[29]=0x200;cpu.gpr[31]=0x1234;cpu.gpr[4]=d+32;cpu.gpr[5]=m;cpu.gpr[6]=0x7100;
+    call(0x800161C4,cpu);
+    cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;
+    for(unsigned i=0;i<6;++i)cpu.gte_data[i]=psx_mod_read_word(v+i*4);
+    call(0x80016260,cpu);call(0x8001628C,cpu);
+    cpu.gpr[29]=0x100;cpu.gpr[31]=0;cpu.gpr[6]=0x7000;
+    call(0x80016260,cpu);call(0x8001628C,cpu);
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    assert(report().find("\"rejected\":4")!=std::string::npos);
+    assert(report().find("\"rigid_batches\":3")!=std::string::npos);
     // A cyclic list must be bounded and fail closed without changing the guest.
     word(ot,ot);cpu.gpr[4]=ot;call(0x80028CD0,cpu);
     assert(report().find("\"invalid_lists\":1")!=std::string::npos);
