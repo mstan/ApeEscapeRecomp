@@ -45,6 +45,7 @@ struct Batch {
     uint32_t native_xy[3], native_z[3], projection[3];
     uint32_t input[6], kind, source_vertex[3], vertex_count;
     uint64_t parents[2]; /* Subdivision: original edge sources, depth guard 164 */
+    uint32_t edge_style; /* original raster-edge bias: 0 none, 1 forward, 2 reverse */
 };
 struct Packet {
     uint32_t address, first, words;
@@ -85,6 +86,7 @@ struct Scope {
     int16_t origin[3]{};
 };
 std::unique_ptr<Frame> writing, published;
+std::unique_ptr<Frame> previous_gpu_frame;
 std::unique_ptr<Frame> held_gpu_frame;
 std::unique_ptr<Frame> pair_gpu_old,pair_gpu_new;
 struct SourceRecord {
@@ -110,13 +112,14 @@ uint64_t next_lifetime = 1;
 struct Lifetime { uint64_t token; uint32_t asset, constructor; };
 std::unordered_map<uint32_t,Lifetime> lifetimes;
 std::atomic<uint64_t> constructions{0}, lifetime_batches{0};
-struct Root {
-    uint64_t lifetime = 0;
-    uint32_t descriptor = 0, pointer = 0;
-    uint32_t world[8]{}, view[8]{}, camera[8]{};
+struct CameraComposition {
+    uint64_t witness=0;
+    uint32_t pointer=0,world[8]{},view[8]{},camera[8]{};
 };
-std::unordered_map<uint32_t,Root> pending_roots;
-std::unordered_map<uint32_t,Root> roots;
+std::unordered_map<uint64_t,CameraComposition> pending_compositions;
+std::unordered_map<uint32_t,CameraComposition> camera_compositions;
+uint64_t next_composition=1;
+std::atomic<uint64_t> composition_count{0},rigid_world_batches{0};
 std::atomic<uint64_t> world_root_batches{0};
 std::atomic<uint64_t> submissions{0}, batches{0}, rejected{0}, overflows{0};
 std::atomic<uint64_t> mapped{0}, partial{0}, unknown{0}, invalid_lists{0}, tag_failures{0};
@@ -125,7 +128,7 @@ std::atomic<uint64_t> world_batches{0}, typed_batches{0};
 std::atomic<uint64_t> terrain_vertices{0};
 std::atomic<uint64_t> subdivision_vertices{0};
 bool open = false;
-bool reported_tuple[5]{}, reported_typed = false, reported_height = false;
+bool reported_tuple[5]{}, reported_typed = false, reported_height = false,reported_edge=false;
 
 bool ram(uint32_t address, uint32_t bytes, uint32_t alignment) {
     const uint32_t p = address & 0x1FFFFFFFu;
@@ -141,12 +144,14 @@ void reset() {
     ++source_epoch;
     observed_cpu = nullptr;
     lifetimes.clear();
-    roots.clear(); pending_roots.clear(); projection_scopes.clear();
+    projection_scopes.clear();
+    pending_compositions.clear();camera_compositions.clear();
     if (writing) writing->clear(0);
     std::lock_guard<std::mutex> lock(published_mutex);
     held_gpu_frame.reset();
     pair_gpu_old.reset();pair_gpu_new.reset();
     if (published) published->clear(0);
+    if(previous_gpu_frame)previous_gpu_frame->clear(0);
     if (source_records) for (size_t i = 0; i < MaxBatches; ++i) source_records[i] = {};
     pgxp_invalidate_all();
 }
@@ -160,6 +165,7 @@ void activate() {
     {
         std::lock_guard<std::mutex> lock(published_mutex);
         published = std::make_unique<Frame>();
+        previous_gpu_frame=std::make_unique<Frame>();
     }
     submissions = batches = rejected = overflows = 0;
     mapped = partial = unknown = invalid_lists = tag_failures = 0;
@@ -169,8 +175,9 @@ void activate() {
     subdivision_vertices = 0;
     constructions = lifetime_batches = 0;
     world_root_batches = 0;
+    composition_count=rigid_world_batches=0;
     for (bool& reported : reported_tuple) reported = false;
-    reported_typed = reported_height = false;
+    reported_typed = reported_height = reported_edge = false;
     if (!pgxp_set_source_tracking(1)) return;
     active = true; reset();
 }
@@ -196,32 +203,29 @@ uint64_t lifetime(uint32_t descriptor, uint32_t asset) {
     return entry!=lifetimes.end() && entry->second.asset==asset &&
         pgxp_load_source(descriptor,asset)==entry->second.token ? entry->second.token : 0;
 }
-void root_before_camera(CPUState* cpu, uint32_t) {
-    const uint32_t frame=cpu->gpr[29];pending_roots.erase(frame);
-    if (!open) return;
-    const uint32_t descriptor=cpu->gpr[19], pointer=cpu->gpr[20];
-    if (!ram(descriptor,24,4) || !ram(pointer,32,4) ||
-        psx_mod_read_word(descriptor+20)!=pointer) { ++writing->rejected; return; }
-    const uint64_t life=lifetime(descriptor,psx_mod_read_word(descriptor));
-    if (!life) return;
-    if (pending_roots.size()==256) { ++writing->overflow; return; }
-    Root r;r.lifetime=life;r.descriptor=descriptor;r.pointer=pointer;
-    read_words(pointer,r.world,8);read_words(0x800E78C0u,r.camera,8);
-    pending_roots[frame]=r;
-}
-void root_after_camera(CPUState* cpu, uint32_t) {
-    const auto pending=pending_roots.find(cpu->gpr[29]);
-    if (!open || pending==pending_roots.end()) return;
-    const Root saved=pending->second;pending_roots.erase(pending);
-    if (cpu->gpr[19]!=saved.descriptor || cpu->gpr[20]!=saved.pointer ||
-        lifetime(saved.descriptor,psx_mod_read_word(saved.descriptor))!=saved.lifetime) {
-        ++writing->rejected; return;
-    }
-    Root r=saved;read_words(r.pointer,r.view,8);
-    roots[r.descriptor & 0x1FFFFFFFu]=r;
-}
 uint64_t projection_frame(const CPUState* cpu) {
     return uint64_t(cpu->gpr[29])<<32 | cpu->gpr[31];
+}
+void camera_composition_before(CPUState* cpu,uint32_t) {
+    const uint64_t frame=projection_frame(cpu);pending_compositions.erase(frame);
+    if(!open || (cpu->gpr[4]&0x1FFFFFFFu)!=0xE78C0u)return;
+    if(!ram(cpu->gpr[5],32,4) || !ram(cpu->gpr[6],32,4)) {++writing->rejected;return;}
+    if(pending_compositions.size()==256) {++writing->overflow;return;}
+    CameraComposition op;op.pointer=cpu->gpr[6];
+    read_words(cpu->gpr[4],op.camera,8);read_words(cpu->gpr[5],op.world,8);
+    pending_compositions.emplace(frame,op);
+}
+void camera_composition_after(CPUState* cpu,uint32_t) {
+    const auto pending=pending_compositions.find(projection_frame(cpu));
+    if(!open || pending==pending_compositions.end())return;
+    CameraComposition op=pending->second;pending_compositions.erase(pending);
+    if(cpu->gpr[6]!=op.pointer) {++writing->rejected;return;}
+    const uint32_t key=op.pointer&0x1FFFFFFFu;
+    if(camera_compositions.size()==4096 && !camera_compositions.count(key)) {++writing->overflow;return;}
+    read_words(op.pointer,op.view,8);
+    op.witness=(uint64_t(1)<<62)|next_composition++;
+    if(!pgxp_tag_word_source(op.pointer,op.view[0],op.witness)) {++tag_failures;return;}
+    camera_compositions[key]=op;++composition_count;
 }
 void scope_begin(CPUState* cpu,uint32_t pc) {
     projection_scopes.erase(projection_frame(cpu));scope={};scope_event=pc;
@@ -322,6 +326,7 @@ void finish(CPUState* cpu, uint32_t) {
     unknown += writing->unknown; invalid_lists += writing->invalid_list;
     std::lock_guard<std::mutex> lock(published_mutex);
     writing.swap(published);
+    if(gpu_capture)writing.swap(previous_gpu_frame);
     writing->clear(++serial); open = true;
 }
 void enter(CPUState* cpu, uint32_t pc) {
@@ -392,14 +397,15 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
     read_words(0x800AF0A0u, b.lens, 8);
     if (scope.kind==TypedWorld) {
         std::memcpy(b.world_root,b.root,sizeof b.root);b.root_domain=2;
-    } else if (scope.kind==Skeletal && b.lifetime) {
-        const auto root=roots.find(scope.descriptor & 0x1FFFFFFFu);
-        if (root!=roots.end() && root->second.lifetime==b.lifetime &&
-            root->second.pointer==scope.matrices &&
-            !std::memcmp(root->second.view,b.root,sizeof b.root) &&
-            !std::memcmp(root->second.camera,b.camera,sizeof b.camera)) {
-            std::memcpy(b.world_root,root->second.world,sizeof b.world_root);
-            b.root_domain=1;++world_root_batches;
+    } else {
+        const auto composed=camera_compositions.find(scope.matrices&0x1FFFFFFFu);
+        if(composed!=camera_compositions.end() &&
+            pgxp_load_source(scope.matrices,b.root[0])==composed->second.witness &&
+            !std::memcmp(composed->second.view,b.root,sizeof b.root) &&
+            !std::memcmp(composed->second.camera,b.camera,sizeof b.camera)) {
+            std::memcpy(b.world_root,composed->second.world,sizeof b.world_root);b.root_domain=1;
+            if(scope.kind==Rigid)++rigid_world_batches;
+            if(scope.kind==Skeletal)++world_root_batches;
         }
     }
     if (writing->batches.size() == MaxBatches) { ++writing->overflow; return false; }
@@ -561,14 +567,20 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     // Original recursive GT4 subdivision: s1 is the four-corner input block.
     // Bind after both output coordinate halves were written. These are native
     // projective midpoint recipes (depth guard 164), not fitted 3D positions.
-    unsigned a=0,b=0,out=0;
+    if(pc==0x8001DB74u) {
+        // The last coordinate half is in the JAL delay slot. At recursive
+        // entry it has completed, and no child has consumed the new block yet.
+        if(cpu->gpr[6]!=cpu->gpr[17]+64)return;
+        pc=cpu->gpr[31];
+    }
+    unsigned a=0,b=0,out=0,style=0;
     switch (pc) {
-        case 0x8001DF6C: a=0;b=8;out=72;break;
-        case 0x8001E0CC: a=0;b=16;out=80;break;
+        case 0x8001DF70: a=0;b=8;out=72;style=1;break;
+        case 0x8001E0D0: a=0;b=16;out=80;style=2;break;
         case 0x8001E20C: a=8;b=16;out=88;break;
-        case 0x8001E408: a=8;b=24;out=88;break;
-        case 0x8001E5FC: a=16;b=24;out=80;break;
-        case 0x8001E7F4: a=0;b=16;out=64;break;
+        case 0x8001E408: a=8;b=24;out=88;style=1;break;
+        case 0x8001E5FC: a=16;b=24;out=80;style=2;break;
+        case 0x8001E7F4: a=0;b=16;out=64;style=2;break;
         default:return;
     }
     const uint32_t block=cpu->gpr[17];
@@ -576,9 +588,34 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     const uint64_t p0=pgxp_load_source(block+a,psx_mod_read_word(block+a));
     const uint64_t p1=pgxp_load_source(block+b,psx_mod_read_word(block+b));
     if (!p0 || !p1) return; // unknown parent stays unknown; never fill by position
+    const auto& s0=source_records[(p0>>2)%MaxBatches].batch;
+    const auto& s1=source_records[(p1>>2)%MaxBatches].batch;
+    if(s0.source!=(p0&~uint64_t(3)) || s1.source!=(p1&~uint64_t(3)) ||
+        (p0&3)>=s0.vertex_count || (p1&3)>=s1.vertex_count)return;
+    const uint32_t xy0=psx_mod_read_word(block+a),xy1=psx_mod_read_word(block+b);
+    const uint16_t depth0=psx_mod_read_half(block+a+4),depth1=psx_mod_read_half(block+b+4);
+    if(s0.native_xy[p0&3]!=xy0 || s1.native_xy[p1&3]!=xy1 ||
+        s0.native_z[p0&3]!=depth0 || s1.native_z[p1&3]!=depth1) {
+        if(!reported_edge)std::fprintf(stderr,"Ape edge parent mismatch pc=%08X xy=%08X/%08X expected=%08X/%08X z=%u/%u expected=%u/%u\n",
+            pc,xy0,xy1,s0.native_xy[p0&3],s1.native_xy[p1&3],depth0,depth1,s0.native_z[p0&3],s1.native_z[p1&3]);
+        reported_edge=true;++writing->rejected;return;
+    }
+    const int za=std::max(164,int(int16_t(depth0))),zb=std::max(164,int(int16_t(depth1))),sum=za+zb;
+    const int xa=int16_t(xy0),xb=int16_t(xy1),ya=int16_t(xy0>>16),yb=int16_t(xy1>>16);
+    const int bias_x=style==1 ? ya<yb : style==2 ? yb<ya : 0;
+    const int bias_y=style==1 ? xb<xa : style==2 ? xa<xb : 0;
+    const uint32_t expected=uint16_t((xa*za+xb*zb+sum*bias_x)/sum) |
+        uint32_t(uint16_t((ya*za+yb*zb+sum*bias_y)/sum))<<16;
+    if(psx_mod_read_word(block+out)!=expected || psx_mod_read_half(block+out+4)!=sum/2) {
+        if(!reported_edge)std::fprintf(stderr,"Ape edge recipe mismatch pc=%08X xy=%08X expected=%08X z=%u expected=%u\n",
+            pc,psx_mod_read_word(block+out),expected,psx_mod_read_half(block+out+4),sum/2);
+        reported_edge=true;
+        ++writing->rejected;return;
+    }
     Batch d{};
     d.source=next_source;d.kind=Subdivision;d.vertex_count=1;
     d.parents[0]=p0;d.parents[1]=p1;
+    d.edge_style=style;
     d.native_xy[0]=psx_mod_read_word(block+out);
     d.native_z[0]=psx_mod_read_half(block+out+4);
     SourceRecord& record=source_records[(next_source>>2)%MaxBatches];
@@ -741,10 +778,10 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
     const bool written=rendered && psx_presentation_gpu_write_png(path,int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1));
     std::snprintf(reply,size_t(cap),"{\"rendered\":%s,\"written\":%s,\"triangles\":%u,\"skipped_commands\":%u,"
         "\"cpu_unchanged\":%s,\"ram_unchanged\":%s,\"vram_unchanged\":%s,\"native_image_unchanged\":%s,"
-        "\"sampled_triangles\":%u,\"paired_vertices\":%u,\"alpha\":%.6f,\"mode\":\"%s\"}",
+        "\"sampled_triangles\":%u,\"paired_vertices\":%u,\"derived_vertices\":%u,\"alpha\":%.6f,\"mode\":\"%s\"}",
         rendered?"true":"false",written?"true":"false",unsigned(triangles.size()),skipped,
         cpu_same?"true":"false",ram_same?"true":"false",vram_same?"true":"false",image_same?"true":"false",
-        sampled_triangles,geometry?geometry->paired:0,geometry?geometry->alpha:1,
+        sampled_triangles,geometry?geometry->paired:0,geometry?geometry->derived:0,geometry?geometry->alpha:1,
         geometry?"geometry interpolation; native 4:3 prototype":"native geometry endpoint");
     return written && cpu_same && ram_same && vram_same && image_same;
 }
@@ -752,14 +789,15 @@ int command(const char* args, char* reply, int cap) {
     std::lock_guard<std::mutex> lock(published_mutex);
     const Frame* f = published.get();
     if(args && !std::strcmp(args,"gpu on")) { gpu_capture=true;std::snprintf(reply,size_t(cap),"{\"gpu_capture\":true}");return 1; }
-    if(args && !std::strcmp(args,"gpu off")) { gpu_capture=false;std::snprintf(reply,size_t(cap),"{\"gpu_capture\":false}");return 1; }
+    if(args && !std::strcmp(args,"gpu off")) { gpu_capture=false;previous_gpu_frame->clear(0);std::snprintf(reply,size_t(cap),"{\"gpu_capture\":false}");return 1; }
     if(args && !std::strcmp(args,"gpu resource-test")) {
         const int ok=psx_presentation_gpu_test_versions();
         std::snprintf(reply,size_t(cap),"{\"retained_texture_test\":%s}",ok?"true":"false");return ok;
     }
-    if(args && !std::strcmp(args,"gpu pair")) {
-        if(!f || !f->texture_version || !held_gpu_frame) { std::snprintf(reply,size_t(cap),"{\"paired\":false}");return 0; }
-        auto a=copy_gpu_frame(*held_gpu_frame),b=copy_gpu_frame(*f);
+    if(args && (!std::strcmp(args,"gpu pair") || !std::strcmp(args,"gpu pair-adjacent"))) {
+        const Frame* earlier=!std::strcmp(args,"gpu pair-adjacent")?previous_gpu_frame.get():held_gpu_frame.get();
+        if(!f || !f->texture_version || !earlier || earlier->serial>=f->serial) { std::snprintf(reply,size_t(cap),"{\"paired\":false}");return 0; }
+        auto a=copy_gpu_frame(*earlier),b=copy_gpu_frame(*f);
         if(!a || !b) { std::snprintf(reply,size_t(cap),"{\"paired\":false}");return 0; }
         pair_gpu_old=std::move(a);pair_gpu_new=std::move(b);
         std::snprintf(reply,size_t(cap),"{\"paired\":true,\"old_submission\":%llu,\"new_submission\":%llu}",
@@ -837,6 +875,7 @@ int command(const char* args, char* reply, int cap) {
         "\"subdivision_vertices\":%llu,"
         "\"constructors\":%llu,\"lifetime_batches\":%llu,\"lifetime\":\"0x%016llX\","
         "\"world_root_batches\":%llu,\"root_domain\":%u,"
+        "\"camera_compositions\":%llu,\"rigid_world_batches\":%llu,"
         "\"root_x\":%d,\"world_root_x\":%d,"
         "\"gpu_snapshot\":%s,"
         "\"lifetime_qualified\":false}",
@@ -857,6 +896,7 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)constructions.load(), (unsigned long long)lifetime_batches.load(),
         b ? (unsigned long long)b->lifetime : 0,
         (unsigned long long)world_root_batches.load(), b ? b->root_domain : 0,
+        (unsigned long long)composition_count.load(),(unsigned long long)rigid_world_batches.load(),
         b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0,
         f && f->texture_version?"true":"false");
     return 1;
@@ -866,8 +906,8 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_activation_plugin(Plugin, activate);
     psx_mod_register_session_reset_plugin(Plugin, deactivate);
     psx_mod_register_savestate_plugin(Plugin, reset);
-    psx_mod_register_instruction_plugin(Plugin, 0x800156C8u, 0x0C00BFD4u, root_before_camera);
-    psx_mod_register_instruction_plugin(Plugin, 0x800156D0u, 0x12E0001Fu, root_after_camera);
+    psx_mod_register_instruction_plugin(Plugin, 0x8002FF50u, 0x8C880000u, camera_composition_before);
+    psx_mod_register_instruction_plugin(Plugin, 0x800300A4u, 0x00C01021u, camera_composition_after);
     psx_mod_register_instruction_plugin(Plugin, 0x80015AC4u, 0x94A20008u, constructed);
     psx_mod_register_instruction_plugin(Plugin, 0x80015B34u, 0x94A20008u, constructed);
     psx_mod_register_instruction_plugin(Plugin, 0x80015BA8u, 0x94A20008u, constructed);
@@ -897,12 +937,9 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_instruction_plugin(Plugin, 0x80044820u, 0x26040001u, projected_terrain);
     psx_mod_register_instruction_plugin(Plugin, 0x800448DCu, 0x26040001u, projected_terrain);
     psx_mod_register_instruction_plugin(Plugin, 0x80044998u, 0x26240250u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001DF6Cu, 0x241800A4u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E0CCu, 0x241900A4u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E20Cu, 0x00409021u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E408u, 0x00409021u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E5FCu, 0x00409021u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E7F4u, 0x00409021u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001DF70u, 0x48994800u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001E0D0u, 0x48994800u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001DB74u, 0x27BDFFC0u, subdivided);
     psx_mod_register_command("ape.presentation.capture", command);
 }
 #endif

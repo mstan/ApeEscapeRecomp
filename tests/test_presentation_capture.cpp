@@ -95,7 +95,7 @@ extern "C" uint16_t psx_mod_read_half(uint32_t address) {
 }
 int main() {
     assert(activation && restore && session_reset && query);
-    assert(hooks().size()==37 && hooks().at(0x80016B44).word==0xE88C0000);
+    assert(hooks().size()==34 && hooks().at(0x80016B44).word==0xE88C0000);
     assert(report().find("\"active\":0")!=std::string::npos);
     activation();CPUState cpu{};
     const uint32_t d=0x80001000, asset=0x80002000, v=0x80003000, m=0x80004000, spans=0x80005000;
@@ -106,10 +106,10 @@ int main() {
     word(asset+4,1);word(spans,3); // one bone, three vertices, first index zero
     for(unsigned i=0;i<6;++i)word(v+4*i, i+1);
     for (uint32_t descriptor : {d,d+32}) {
-        cpu.gpr[19]=descriptor;cpu.gpr[20]=m;
-        call(0x800156C8,cpu);
+        cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=m;cpu.gpr[6]=m;
+        call(0x8002FF50,cpu);
         word(m+20,psx_mod_read_word(m+20)+123); // original camera composition overwrites root
-        call(0x800156D0,cpu);
+        call(0x800300A4,cpu);
         cpu.gpr[4]=descriptor;call(0x80016A74,cpu);
         cpu.gpr[4]=0x800E7D00;cpu.gpr[3]=v;cpu.gpr[5]=0;
         cpu.gpr[11]=0;cpu.gpr[15]=32;cpu.gpr[16]=m;cpu.gpr[25]=v;
@@ -153,7 +153,9 @@ int main() {
     call(0x80016B44,cpu);
     cpu.gpr[4]=ot;call(0x80028CD0,cpu);
     assert(report().find("\"lifetime\":\"0x0000000000000000\"")!=std::string::npos);
-    assert(report().find("\"root_domain\":0")!=std::string::npos);
+    // Transform provenance remains valid; the missing lifetime independently
+    // prevents this reconstructed instance from interpolating.
+    assert(report().find("\"root_domain\":1")!=std::string::npos);
     assert(first.find("\"native_xy\":100")!=std::string::npos);
     assert(first.find("\"lifetime_qualified\":false")!=std::string::npos);
     assert(first.find("\"mapped_polygons\":1")!=std::string::npos);
@@ -238,8 +240,9 @@ int main() {
     assert(report().find("\"rejected\":4")!=std::string::npos);
     const uint32_t block=0x1F800280u;
     word(block,100);word(block+8,101);word(block+72,100);word(block+76,200);
+    word(block+4,200);word(block+12,201);
     sources[block]=gte_source[0];sources[block+8]=gte_source[1];
-    cpu.gpr[17]=block;call(0x8001DF6C,cpu);
+    cpu.gpr[17]=block;call(0x8001DF70,cpu);
     const uint64_t midpoint=sources.at(block+72);
     assert(midpoint && midpoint!=sources[block] && midpoint!=sources[block+8]);
     // The next list must own the midpoint and its earlier source dependencies.
@@ -248,8 +251,16 @@ int main() {
     assert(report().find("\"last_batches\":2")!=std::string::npos);
     assert(report().find("\"subdivision_vertices\":1")!=std::string::npos);
     sources.erase(block+8);sources.erase(block+72);
-    call(0x8001DF6C,cpu);
+    call(0x8001DF70,cpu);
     assert(sources.find(block+72)==sources.end()); // unknown parent cannot be guessed
+    // The recursive child sees the fully written midpoint before its first
+    // vertex load. Observing only the parent's return was too late.
+    sources[block+8]=gte_source[0];sources[block+16]=gte_source[1];
+    word(block+8,100);word(block+12,200);word(block+16,101);word(block+20,201);
+    word(block+88,100);word(block+92,200);
+    cpu.gpr[31]=0x8001E20Cu;cpu.gpr[6]=block+64;call(0x8001DB74,cpu);
+    assert(sources.count(block+88) && sources[block+88]!=sources[block+8]);
+    cpu.gpr[31]=0;
     for(uint32_t pc : {0x80015BA8u,0x80015C3Cu,0x80015D14u}) {
         const uint32_t descriptor=d+64;
         word(descriptor,asset);cpu.gpr[5]=asset;
@@ -308,10 +319,10 @@ int main() {
     for(unsigned frame=0;frame<2;++frame) {
         uint32_t root[8]={4096,0,4096,0,4096,frame*20,0,500};
         for(unsigned i=0;i<8;++i)word(m+i*4,root[i]);
-        cpu.gpr[19]=d;cpu.gpr[20]=m;call(0x800156C8,cpu);
+        cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=m;cpu.gpr[6]=m;call(0x8002FF50,cpu);
         root[2]=3040;
         for(unsigned i=0;i<8;++i){word(m+i*4,root[i]);cpu.gte_ctrl[i]=root[i];}
-        call(0x800156D0,cpu);
+        call(0x800300A4,cpu);
         cpu.gte_ctrl[24]=100u<<16;cpu.gte_ctrl[25]=100u<<16;cpu.gte_ctrl[26]=100;
         cpu.gpr[4]=d;call(0x80016A74,cpu);
         cpu.gpr[4]=0x800E7D00;cpu.gpr[3]=v;cpu.gpr[5]=0;
@@ -339,6 +350,42 @@ int main() {
     assert(rendered_triangles.size()==1);
     assert(std::abs(rendered_triangles[0].vertices[0].x-101)<1e-5);
     assert(std::abs(rendered_triangles[0].vertices[0].y-104.03125)<1e-5);
+    // Rigid world pieces use the original general camera composer, rather
+    // than the skeleton-only call site. Keep its exact write-invalidated
+    // output witness; identical matrix bytes alone cannot qualify a binding.
+    restore();word(asset+4,3u<<16);word(d,asset);word(d+12,v);
+    cpu.gpr[4]=d;cpu.gpr[5]=asset;call(0x80015B34,cpu);
+    for(unsigned frame=0;frame<2;++frame) {
+        uint32_t root[8]={4096,0,4096,0,4096,frame*20,0,500};
+        for(unsigned i=0;i<8;++i)word(m+i*4,root[i]);
+        cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=m;cpu.gpr[6]=m;
+        call(0x8002FF50,cpu);
+        root[2]=3040;
+        for(unsigned i=0;i<8;++i){word(m+i*4,root[i]);cpu.gte_ctrl[i]=root[i];}
+        call(0x800300A4,cpu);
+        assert(sources[m]>>62);
+        cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4,cpu);
+        cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;
+        call(0x80016260,cpu);call(0x8001628C,cpu);
+        word(block,xy[0]);word(block+4,500);word(block+8,xy[1]);word(block+12,500);
+        word(block+72,20u|(20u<<16));word(block+76,500);
+        sources[block]=gte_source[0];sources[block+8]=gte_source[1];
+        cpu.gpr[17]=block;call(0x8001DF70,cpu);
+        for(unsigned i=0;i<3;++i)sources[ot+8+i*4]=gte_source[i];
+        sources[ot+8]=sources.at(block+72);
+        cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+        assert(report().find("\"root_domain\":1")!=std::string::npos);
+        if(!frame)report("gpu freeze");
+    }
+    report("gpu pair-adjacent");
+    assert(report("gpu interpolate 0.5 unused.png").find("\"paired_vertices\":3")!=std::string::npos);
+    assert(rendered_triangles.size()==1 && std::abs(rendered_triangles[0].vertices[0].x-107)<1e-5);
+    sources.erase(m); // native/untracked same-value write invalidates the witness
+    cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4,cpu);
+    cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;
+    call(0x80016260,cpu);call(0x8001628C,cpu);
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    assert(report().find("\"root_domain\":0")!=std::string::npos);
     session_reset();assert(report().find("\"active\":0")!=std::string::npos);
     assert(!gpu_refs);
     std::cout<<"Ape explicit projection capture: read-only, distinct instances, packet lineage, bounded lists, reset PASS\n";

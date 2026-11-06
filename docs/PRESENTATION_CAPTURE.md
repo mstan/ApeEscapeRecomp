@@ -1,7 +1,8 @@
 # Explicit presentation source capture
 
 `src/mods/ape_presentation_capture.cpp` is a developer-only, default-off
-qualification producer. It does not generate or present intermediate frames.
+qualification producer. It exports retained geometry phases but does not present
+live intermediate frames.
 The preloaded/release catalog excludes its package.
 
 For SCUS-94423, guarded instruction hooks observe the original skeletal
@@ -24,9 +25,13 @@ across multiple ordering-table submissions in one update. Explicit source tokens
 corners only through intact CPU/GTE word copies; identical coordinates do not
 establish lineage. Partial writes and arithmetic discard it. Unknown geometry
 remains untracked. The recursive GT4 subdivision producer binds explicit parent
-tokens after its original half-word writers finish; child snapshots retain their
-parent dependencies. Those recipes use native projective/depth-guard semantics,
-not assumed world-space midpoints. No generic arithmetic starts preserving tokens.
+tokens after its original half-word writers finish and before recursive children
+consume them. The first edges are observed at the common branch successors
+`8001DF70`/`8001E0D0`; recursive-entry observation at `8001DB74` handles coordinates
+completed in JAL delay slots. Child snapshots retain their parent dependencies.
+Each recipe validates both original parent XY/Z and the original result using
+the depth guard 164 and the authored raster-edge bias. Sampling recomputes those
+explicit edges from the sampled parents. No generic arithmetic preserves tokens.
 Any invalid list or overflow disqualifies the snapshot.
 
 These are ordering-table submissions, not qualified distinct game updates.
@@ -39,15 +44,17 @@ even if the replacement value agrees. Each copied source batch owns the observed
 lifetime. This does not yet qualify all allocation/reuse paths or terrain
 lifetimes, and restore currently cuts capture history rather than reconstructing
 live identities. The report includes constructor and witnessed-batch counts.
-The skeleton update at `80015504` overwrites its root matrix when composing
-the camera at `800156C8`. Paired observations before that call and at its return
-`800156D0` retain the original world root separately. A batch admits that world
-root only when the lifetime, matrix pointer, resulting view root and camera all
-still agree with the recorded operation. This uses original matrix provenance;
-there is no fitted camera or decomposition of a camera-composed root as an
-object pose. `root_domain` is 1 for that binding, 2 for authored typed-world
-transforms, and 0 for an unqualified root. Bone hierarchy and other camera
-domains still require their own scene-producer integration.
+The original matrix composer at `8002FF50` receives camera, world and output
+matrix operands. When the camera operand is the original global camera, entry
+observation retains the world matrix before in-place composition. Observation
+at `800300A4` retains the result and puts a write-invalidated witness on its
+first word. Skeletal and rigid world sources admit that binding only when the
+witness, matrix pointer, full result and camera still agree. Object lifetime
+qualification remains independent. This replaces the earlier skeleton-only
+call-site binding and keeps rigid UI domains separate. No fitted camera or
+camera-composed object pose is used. `root_domain` is 1 for this binding, 2 for
+authored typed-world transforms, and 0 for an unqualified root. Bone hierarchy
+and other camera domains still require their own scene-producer integration.
 Leaf projection scopes belong to their original guest call frames and survive
 nested draws, other guest stacks and ordering-table submissions. Stack/return
 registers delimit the activation only; they never identify corresponding
@@ -70,7 +77,9 @@ be used to compare separate live-frame observations as though they were frozen.
 retained old/new versions through cache turnover, and restores the texel. These
 qualification controls are development-only; use isolated test sessions.
 
-`gpu pair` retains the frozen submission and the latest submission. The command
+`gpu pair` retains the frozen submission and the latest submission.
+`gpu pair-adjacent` retains the two latest submissions, using a bounded third
+owned frame so the older data is not overwritten. The command
 `gpu interpolate <alpha> <path>` samples explicit camera/world-root/local-vertex
 geometry at a fixed phase and exports it. The camera's authored lens matrix at
 `800AF0A0` is copied separately: the original camera construction composes it

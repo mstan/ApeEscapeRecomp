@@ -5,6 +5,7 @@ struct GeometrySamples {
     std::unordered_map<uint64_t,PsxPresentationSample> vertices;
     PsxPresentationCamera camera{};
     uint32_t paired=0;
+    uint32_t derived=0;
     double alpha=1;
     const char* error="unknown geometry failure";
     int16_t camera_linear[9]{};
@@ -80,7 +81,7 @@ VertexKey vertex_key(const Batch& b,unsigned corner) {
 VertexMap vertex_map(const Frame& f,const Batch& ref) {
     VertexMap result;
     for(const auto& b:f.batches) {
-        if(b.kind==Rigid || b.kind==Subdivision || (b.kind==Skeletal && b.root_domain!=1) ||
+        if(b.kind==Subdivision || ((b.kind==Skeletal || b.kind==Rigid) && b.root_domain!=1) ||
             std::memcmp(b.lens,ref.lens,sizeof b.lens) ||
             std::memcmp(b.camera,ref.camera,sizeof b.camera) || std::memcmp(b.projection,ref.projection,sizeof b.projection))continue;
         for(unsigned i=0;i<b.vertex_count;++i) {
@@ -127,6 +128,28 @@ bool source_object(const VertexRef& source,const PsxPresentationCamera& camera,
     }
     object.vertices=vertices;object.vertex_count=3;return true;
 }
+bool sample_derived(uint64_t token,const std::unordered_map<uint64_t,const Batch*>& sources,
+    GeometrySamples& result,unsigned depth=0) {
+    if(result.vertices.count(token))return true;
+    if(depth>8 || (token&3))return false;
+    const auto found=sources.find(token);
+    if(found==sources.end() || found->second->kind!=Subdivision)return false;
+    const Batch& edge=*found->second;
+    for(uint64_t parent:edge.parents)if(!sample_derived(parent,sources,result,depth+1))return false;
+    const auto a=result.vertices.at(edge.parents[0]),b=result.vertices.at(edge.parents[1]);
+    if(a.view[2]<=0 || b.view[2]<=0)return false;
+    const double za=std::max(164.0,a.view[2]),zb=std::max(164.0,b.view[2]);
+    PsxPresentationSample out{};out.view[2]=(za+zb)*.5;
+    for(unsigned k=0;k<2;++k)out.view[k]=(a.view[k]*za/a.view[2]+b.view[k]*zb/b.view[2])*.5;
+    const double ax=a.view[0]/a.view[2],bx=b.view[0]/b.view[2];
+    const double ay=a.view[1]/a.view[2],by=b.view[1]/b.view[2];
+    const int bias_x=edge.edge_style==1 ? ay<by : edge.edge_style==2 ? by<ay : 0;
+    const int bias_y=edge.edge_style==1 ? bx<ax : edge.edge_style==2 ? ax<bx : 0;
+    out.view[0]+=bias_x*out.view[2]/result.camera.focal_x;
+    out.view[1]+=bias_y*out.view[2]/result.camera.focal_y;
+    out.interpolated=a.interpolated && b.interpolated;
+    result.vertices.emplace(token,out);++result.derived;return true;
+}
 bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha,GeometrySamples& result) {
     const auto fail=[&](const char* reason) {result.error=reason;return false;};
     const Batch* a=camera_reference(old_frame),*b=camera_reference(new_frame);
@@ -170,8 +193,8 @@ bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha
     for(size_t i=0;i<samples.size();i+=3) {
         sampled_ids.emplace(samples[i].identity,samples[i]);if(samples[i].interpolated)++result.paired;
     }
-    for(const auto& batch:new_frame.batches)if(batch.kind!=Subdivision && batch.kind!=Rigid &&
-        !(batch.kind==Skeletal && batch.root_domain!=1))
+    for(const auto& batch:new_frame.batches)if(batch.kind!=Subdivision &&
+        !((batch.kind==Skeletal || batch.kind==Rigid) && batch.root_domain!=1))
         for(unsigned i=0;i<batch.vertex_count;++i) {
             const auto id=identities.find(vertex_key(batch,i));
             // Only a source admitted into the exact current camera domain can
@@ -181,5 +204,8 @@ bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha
                 !std::memcmp(batch.projection,b->projection,sizeof batch.projection))
                 result.vertices.emplace(batch.source+i,sampled_ids.at(id->second));
         }
+    std::unordered_map<uint64_t,const Batch*> sources;
+    for(const auto& batch:new_frame.batches)sources.emplace(batch.source,&batch);
+    for(const auto& batch:new_frame.batches)if(batch.kind==Subdivision)sample_derived(batch.source,sources,result);
     result.alpha=alpha;return !result.vertices.empty();
 }
