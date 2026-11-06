@@ -1,9 +1,12 @@
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "pgxp.h"
+#include "gpu.h"
+#include "presentation_gpu.h"
 #include <array>
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -25,6 +28,10 @@ unsigned char& byte(uint32_t address) {
     assert(address>=0x1F800000u && address<0x1F800400u);
     return scratch[address-0x1F800000u];
 }
+bool fake_gpu=false;
+unsigned gpu_refs=0;
+std::vector<PsxPresentationTriangle> rendered_triangles;
+std::vector<PsxPresentationMaterial> rendered_materials;
 void word(uint32_t address, uint32_t value) {
     for (unsigned i=0;i<4;++i) byte(address+i) = uint8_t(value>>(8*i));
 }
@@ -51,6 +58,21 @@ extern "C" int pgxp_tag_word_source(uint32_t address,uint32_t expected,uint64_t 
     assert(psx_mod_read_word(address)==expected);sources[address]=token;return 1;
 }
 extern "C" void pgxp_invalidate_all() {sources.clear();}
+extern "C" void gpu_get_drawing_environment(GpuDrawingEnvironment* out) {*out={};out->area.right=383;out->area.bottom=239;out->area.offset_x=5;out->area.offset_y=7;}
+extern "C" uint64_t psx_presentation_gpu_snapshot() {if(!fake_gpu)return 0;++gpu_refs;return 101;}
+extern "C" int psx_presentation_gpu_retain(uint64_t id) {if(!fake_gpu || id!=101)return 0;++gpu_refs;return 1;}
+extern "C" void psx_presentation_gpu_release(uint64_t id) {assert(id==101 && gpu_refs);--gpu_refs;}
+extern "C" int psx_presentation_gpu_render(const PsxPresentationTriangle* tri,uint32_t count,const PsxPresentationMaterial* mat,uint32_t materials) {
+    rendered_triangles.assign(tri,tri+count);rendered_materials.assign(mat,mat+materials);return fake_gpu;
+}
+extern "C" int psx_presentation_gpu_write_png(const char*,int,int,int,int) {return fake_gpu;}
+extern "C" int psx_presentation_gpu_test_versions() {return 0;}
+extern "C" const uint16_t* gpu_get_vram() {static uint16_t vram[1024*512]{};return vram;}
+extern "C" int gl_renderer_read_display_hires(int,int,int,int,uint32_t* out,int,int* width,int* height) {
+    if(!fake_gpu)return 0;
+    *width=*height=2;for(unsigned i=0;i<4;++i)out[i]=0x12345678;return 4;
+}
+extern "C" int gl_renderer_accurate_blending() {return 1;}
 // The runtime's existing GPU command decoder supplies lengths. This fixture
 // exercises polygon commands preceded by a draw-mode word in the same node.
 extern "C" int gpu_gp0_command_word_count(uint8_t op) {
@@ -256,6 +278,68 @@ int main() {
     word(ot,ot);cpu.gpr[4]=ot;call(0x80028CD0,cpu);
     assert(report().find("\"invalid_lists\":1")!=std::string::npos);
     restore();assert(report().find("\"last_batches\":0")!=std::string::npos);
+    // Native material decoding is independent of geometry correspondence.
+    // Verify one semi-transparent textured quad, its environment/CLUT and
+    // owned command bytes, then keep it while the original RAM changes.
+    fake_gpu=true;report("gpu on");
+    word(ot,0x0AFFFFFFu);word(ot+4,0xE1000200u);word(ot+8,0x2E808080u);
+    const uint32_t xy[4]={10u|(20u<<16),30u|(20u<<16),10u|(40u<<16),30u|(40u<<16)};
+    const uint32_t uv[4]={4u|(8u<<8)|(0x1C04u<<16),24u|(8u<<8)|(0x0140u<<16),4u|(28u<<8),24u|(28u<<8)};
+    for(unsigned i=0;i<4;++i) {word(ot+12+i*8,xy[i]);word(ot+16+i*8,uv[i]);}
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);assert(gpu_refs==1);
+    assert(report("gpu render unused.png").find("\"native_image_unchanged\":true")!=std::string::npos);
+    assert(rendered_triangles.size()==2 && rendered_materials.size()==1);
+    assert(rendered_triangles[0].vertices[0].x==15 && rendered_triangles[0].vertices[0].y==27);
+    const auto material=rendered_materials[0];
+    assert(material.texpage==0x140 && material.clut_x==64 && material.clut_y==112 && material.semi==2);
+    assert(material.texture_version==101 && material.uv_limits[0]==4 && material.uv_limits[3]==28);
+    assert((material.flags&(PSX_PRESENTATION_TEXTURED|PSX_PRESENTATION_DITHER))==(PSX_PRESENTATION_TEXTURED|PSX_PRESENTATION_DITHER));
+    report("gpu freeze");assert(gpu_refs==2);
+    word(ot+12,0);report("gpu render-held unused.png");
+    assert(rendered_triangles[0].vertices[0].x==15 && rendered_triangles[0].vertices[0].y==27);
+    // Original camera composition includes an authored 3040/4096 Y lens.
+    // Pair explicit source instances and verify world motion at the halfway
+    // phase with that lens, rather than accepting it as camera rotation.
+    const uint32_t lens[8]={4096,0,3040,0,4096,0,0,0};
+    for(unsigned i=0;i<8;++i){word(0x800AF0A0u+i*4,lens[i]);word(0x800E78C0u+i*4,lens[i]);}
+    word(asset+4,1);word(spans,3);word(d,asset);word(d+12,spans);word(d+16,v);word(d+20,m);
+    cpu.gpr[4]=d;cpu.gpr[5]=asset;call(0x80015B34,cpu);
+    const int16_t points[3][3]={{-30,-20,0},{30,-20,0},{0,20,0}};
+    for(unsigned frame=0;frame<2;++frame) {
+        uint32_t root[8]={4096,0,4096,0,4096,frame*20,0,500};
+        for(unsigned i=0;i<8;++i)word(m+i*4,root[i]);
+        cpu.gpr[19]=d;cpu.gpr[20]=m;call(0x800156C8,cpu);
+        root[2]=3040;
+        for(unsigned i=0;i<8;++i){word(m+i*4,root[i]);cpu.gte_ctrl[i]=root[i];}
+        call(0x800156D0,cpu);
+        cpu.gte_ctrl[24]=100u<<16;cpu.gte_ctrl[25]=100u<<16;cpu.gte_ctrl[26]=100;
+        cpu.gpr[4]=d;call(0x80016A74,cpu);
+        cpu.gpr[4]=0x800E7D00;cpu.gpr[3]=v;cpu.gpr[5]=0;
+        cpu.gpr[11]=0;cpu.gpr[15]=32;cpu.gpr[16]=m;cpu.gpr[25]=v;
+        for(unsigned i=0;i<3;++i) {
+            cpu.gte_data[i*2]=uint16_t(points[i][0]) | uint32_t(uint16_t(points[i][1]))<<16;
+            cpu.gte_data[i*2+1]=uint16_t(points[i][2]);
+            word(v+i*8,cpu.gte_data[i*2]);word(v+i*8+4,cpu.gte_data[i*2+1]);
+            cpu.gte_data[12+i]=xy[i];cpu.gte_data[17+i]=500;
+        }
+        if(frame) {
+            // A projected but unsubmitted camera domain must not override
+            // the actual packet's domain, even when observed first.
+            cpu.gte_ctrl[26]=90;call(0x80016B44,cpu);cpu.gte_ctrl[26]=100;
+        }
+        call(0x80016B44,cpu);call(0x80016B8C,cpu);
+        word(ot,0x04FFFFFFu);word(ot+4,0x20808080u);
+        for(unsigned i=0;i<3;++i){word(ot+8+i*4,xy[i]);sources[ot+8+i*4]=gte_source[i];}
+        cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+        if(!frame)report("gpu freeze");
+    }
+    report("gpu pair");
+    const auto middle=report("gpu interpolate 0.5 unused.png");
+    assert(middle.find("\"paired_vertices\":3")!=std::string::npos);
+    assert(rendered_triangles.size()==1);
+    assert(std::abs(rendered_triangles[0].vertices[0].x-101)<1e-5);
+    assert(std::abs(rendered_triangles[0].vertices[0].y-104.03125)<1e-5);
     session_reset();assert(report().find("\"active\":0")!=std::string::npos);
+    assert(!gpu_refs);
     std::cout<<"Ape explicit projection capture: read-only, distinct instances, packet lineage, bounded lists, reset PASS\n";
 }

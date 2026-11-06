@@ -58,6 +58,35 @@ domains and display deadlines still need qualification before this data can
 enable interpolation. The debug reply therefore reports
 `lifetime_qualified:false`.
 
+The developer command `gpu on` retains an immutable GPU texture version with
+each submission. `gpu render <path>` draws captured polygons and rectangles into
+a separate target and exports a native-resolution PNG. It performs same-command
+CPU, RAM, CPU-VRAM and native GPU image checks; the guest cannot advance between
+those observations. The old debug `pause` command is unsupported and must not
+be used to compare separate live-frame observations as though they were frozen.
+`gpu freeze` owns a complete copied submission and retained texture reference;
+`gpu render-held <path>` renders it after subsequent native frames. The separate
+`gpu resource-test` temporarily changes one native texel, renders independently
+retained old/new versions through cache turnover, and restores the texel. These
+qualification controls are development-only; use isolated test sessions.
+
+`gpu pair` retains the frozen submission and the latest submission. The command
+`gpu interpolate <alpha> <path>` samples explicit camera/world-root/local-vertex
+geometry at a fixed phase and exports it. The camera's authored lens matrix at
+`800AF0A0` is copied separately: the original camera construction composes it
+through `8002FF50`, and its 3040/4096 Y scale is projection rather than rotation.
+The adapter removes that observed scale from view coordinates and retains it
+in the projection. Unsupported non-diagonal lenses are rejected. This uses
+original matrix operands, without fitting a camera to screen coordinates.
+
+This is a retained-pair qualification prototype. It currently renders the newer
+submission's visible command topology, and leaves unsupported/unknown geometry
+at native positions. Skipped commands and sampled triangles are reported
+explicitly. Full topology/visibility, effective widescreen/FOV, remaining geometry
+domains and discontinuities still require qualification. It does not present
+live intermediate frames. GPU-owner synchronization in these debug entry points
+is not a qualified high-refresh scheduling path.
+
 `ape_presentation_capture_test` verifies read-only hooks, distinct instances,
 explicit packet lineage across submissions, multiple commands per node, rigid
 and world layouts, all quarter-turns, terrain indices, subdivision parents,

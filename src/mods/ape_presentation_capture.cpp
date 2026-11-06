@@ -2,14 +2,21 @@
 #include "mod_plugins.h"
 #include "pgxp.h"
 #include "gpu.h"
+#include "presentation_gpu.h"
+#include "gpu_gl_renderer.h"
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <tuple>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #if defined(PSX_MOD_DEVELOPER_CHANNEL) && PSX_MOD_DEVELOPER_CHANNEL
@@ -33,7 +40,7 @@ struct Batch {
     uint64_t source;
     uint64_t lifetime;
     uint32_t descriptor, asset, bone, vertex;
-    uint32_t local[6], matrix[8], root[8], camera[8];
+    uint32_t local[6], matrix[8], root[8], camera[8], lens[8];
     uint32_t world_root[8], root_domain; // 0 unknown, 1 original pre-camera, 2 authored typed-world
     uint32_t native_xy[3], native_z[3], projection[3];
     uint32_t input[6], kind, source_vertex[3], vertex_count;
@@ -45,21 +52,27 @@ struct Packet {
 };
 struct Frame {
     uint64_t serial = 0;
+    uint64_t epoch = 1;
     uint32_t skeletons = 0, rejected = 0, overflow = 0;
     std::vector<Batch> batches;
     std::vector<uint32_t> commands;
     std::vector<Packet> packets;
     uint32_t mapped = 0, partial = 0, unknown = 0, invalid_list = 0;
     uint32_t projected = 0;
+    uint64_t texture_version = 0;
+    GpuDrawingEnvironment environment{};
     Frame() {
         batches.reserve(MaxBatches); commands.reserve(MaxWords);
         packets.reserve(MaxNodes);
     }
     void clear(uint64_t id) {
+        if(texture_version)psx_presentation_gpu_release(texture_version);
+        texture_version=0;environment={};
         serial = id; skeletons = rejected = overflow = 0; batches.clear();
         commands.clear(); packets.clear(); mapped = partial = unknown = invalid_list = 0;
         projected = 0;
     }
+    ~Frame() { if(texture_version)psx_presentation_gpu_release(texture_version); }
 };
 struct Scope {
     uint64_t lifetime = 0;
@@ -72,6 +85,8 @@ struct Scope {
     int16_t origin[3]{};
 };
 std::unique_ptr<Frame> writing, published;
+std::unique_ptr<Frame> held_gpu_frame;
+std::unique_ptr<Frame> pair_gpu_old,pair_gpu_new;
 struct SourceRecord {
     Batch batch{};
     uint64_t copied_submission = UINT64_MAX;
@@ -86,7 +101,10 @@ uint32_t scope_event = 0;
 // remain explicit source indices and constructor lifetimes.
 std::unordered_map<uint64_t,Scope> projection_scopes;
 std::atomic<bool> active{false};
+bool gpu_capture = false;
+CPUState* observed_cpu = nullptr;
 uint64_t serial = 0;
+uint64_t source_epoch = 1;
 uint64_t next_source = 4;
 uint64_t next_lifetime = 1;
 struct Lifetime { uint64_t token; uint32_t asset, constructor; };
@@ -120,16 +138,20 @@ void read_words(uint32_t address, uint32_t* out, unsigned count) {
 }
 void reset() {
     scope = {}; scope_event = 0; open = active.load(); serial = 0;
+    ++source_epoch;
+    observed_cpu = nullptr;
     lifetimes.clear();
     roots.clear(); pending_roots.clear(); projection_scopes.clear();
     if (writing) writing->clear(0);
     std::lock_guard<std::mutex> lock(published_mutex);
+    held_gpu_frame.reset();
+    pair_gpu_old.reset();pair_gpu_new.reset();
     if (published) published->clear(0);
     if (source_records) for (size_t i = 0; i < MaxBatches; ++i) source_records[i] = {};
     pgxp_invalidate_all();
 }
 void deactivate() {
-    active = false; reset(); pgxp_set_source_tracking(0);
+    active = false; gpu_capture=false; reset(); pgxp_set_source_tracking(0);
 }
 void activate() {
     active = false; open = false;
@@ -286,8 +308,14 @@ void capture_list(uint32_t head) {
 }
 void finish(CPUState* cpu, uint32_t) {
     if (!open) return;
+    observed_cpu=cpu;
     open = false; scope = {}; scope_event = 0x80028CD0u;
     capture_list(cpu->gpr[4]);
+    writing->epoch=source_epoch;
+    if(gpu_capture && !writing->invalid_list && !writing->overflow && !writing->rejected) {
+        gpu_get_drawing_environment(&writing->environment);
+        writing->texture_version=psx_presentation_gpu_snapshot();
+    }
     batches += writing->projected; rejected += writing->rejected;
     overflows += writing->overflow; ++submissions;
     mapped += writing->mapped; partial += writing->partial;
@@ -359,6 +387,9 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
         for (unsigned i = 0; i < 3; ++i) b.root[5+i] = uint32_t(int32_t(scope.origin[i]));
     }
     read_words(0x800E78C0u, b.camera, 8);
+    // Original camera construction premultiplies by this authored projection
+    // matrix via 8002FF50. Its Y scale belongs to the lens, not camera rotation.
+    read_words(0x800AF0A0u, b.lens, 8);
     if (scope.kind==TypedWorld) {
         std::memcpy(b.world_root,b.root,sizeof b.root);b.root_domain=2;
     } else if (scope.kind==Skeletal && b.lifetime) {
@@ -555,9 +586,213 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     if (!pgxp_tag_word_source(block+out,d.native_xy[0],next_source)) { ++tag_failures; return; }
     next_source+=4;++subdivision_vertices;
 }
+#include "ape_presentation_sample.inc"
+int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,const GeometrySamples* geometry=nullptr) {
+    if(!f.texture_version) { std::snprintf(reply,size_t(cap),"{\"error\":\"no GPU snapshot\"}");return 0; }
+    std::vector<PsxPresentationTriangle> triangles;
+    std::vector<PsxPresentationMaterial> materials;
+    triangles.reserve(f.packets.size()*2);materials.reserve(f.packets.size());
+    GpuDrawingEnvironment env=f.environment;
+    const float color5=gl_renderer_accurate_blending()?8.0f/255.0f:1.0f/31.0f;
+    uint32_t skipped=0;
+    uint32_t sampled_triangles=0;
+    std::unique_ptr<PsxPresentationDraw,decltype(&psx_presentation_draw_destroy)> clipped(psx_presentation_draw_create(3,6),psx_presentation_draw_destroy);
+    if(geometry && !clipped) {std::snprintf(reply,size_t(cap),"{\"error\":\"geometry workspace unavailable\"}");return 0;}
+    for(const Packet& p:f.packets) {
+        const uint32_t* w=f.commands.data()+p.first;const unsigned op=w[0]>>24;
+        switch(op) {
+        case 0xE1:env.mode=(env.mode&~0x83FFu)|(w[0]&0x3FFu)|((w[0]&(1u<<11))<<4);continue;
+        case 0xE2:env.texture_window=w[0]&0xFFFFFu;continue;
+        case 0xE3:env.area.left=w[0]&1023;env.area.top=(w[0]>>10)&511;continue;
+        case 0xE4:env.area.right=w[0]&1023;env.area.bottom=(w[0]>>10)&511;continue;
+        case 0xE5:{const int32_t a=int32_t(w[0]&0x7FF),b=int32_t((w[0]>>11)&0x7FF);
+            env.area.offset_x=(a^1024)-1024;env.area.offset_y=(b^1024)-1024;continue;}
+        case 0xE6:env.mode=(env.mode&~0x1800u)|((w[0]&3u)<<11);continue;
+        default:break;
+        }
+        if((op&0xE0u)==0x60u) {
+            const bool texture=(op&4)!=0;const unsigned size=(op>>3)&3;
+            const unsigned fixed[4]={0,1,8,16};
+            const uint32_t wh=size?0:w[texture?3:2];
+            const unsigned width=size?fixed[size]:(texture?(wh&1023):std::min(wh&65535u,1023u));
+            const unsigned height=size?fixed[size]:(texture?((wh>>16)&511):std::min(wh>>16,511u));
+            if(!width || !height)continue;
+            PsxPresentationMaterial m{};m.texture_version=f.texture_version;m.texture_window=env.texture_window;
+            m.texpage=uint16_t(env.mode&511);m.semi=(op&2)?int16_t((env.mode>>5)&3):-1;
+            m.clip[0]=int16_t(env.area.left);m.clip[1]=int16_t(env.area.top);
+            m.clip[2]=int16_t(env.area.right);m.clip[3]=int16_t(env.area.bottom);
+            if(env.mode&(1u<<11))m.flags|=PSX_PRESENTATION_MASK_SET;
+            if(env.mode&(1u<<12))m.flags|=PSX_PRESENTATION_MASK_CHECK;
+            unsigned u=0,vv=0;
+            if(texture) {
+                m.flags|=PSX_PRESENTATION_TEXTURED;if(op&1)m.flags|=PSX_PRESENTATION_RAW_TEXTURE;
+                const unsigned clut=w[2]>>16;m.clut_x=uint16_t((clut&63)*16);m.clut_y=uint16_t((clut>>6)&511);
+                u=w[2]&255;vv=(w[2]>>8)&255;
+                m.uv_limits[0]=uint16_t(u+width<=256?u:0);m.uv_limits[2]=uint16_t(u+width<=256?u+width-1:255);
+                m.uv_limits[1]=uint16_t(vv+height<=256?vv:0);m.uv_limits[3]=uint16_t(vv+height<=256?vv+height-1:255);
+            }
+            const int x=((int(w[1]&2047)^1024)-1024)+env.area.offset_x;
+            const int y=((int((w[1]>>16)&2047)^1024)-1024)+env.area.offset_y;
+            PsxPresentationDrawVertex vertices[4]{};
+            for(unsigned j=0;j<4;++j) {
+                vertices[j].x=x+((j&1)?width:0);vertices[j].y=y+((j&2)?height:0);
+                vertices[j].uv[0]=float(u+((j&1)?width:0));vertices[j].uv[1]=float(vv+((j&2)?height:0));
+                for(unsigned k=0;k<3;++k)vertices[j].color[k]=texture?float((w[0]>>(k*8))&255)/255.0f:
+                    float((w[0]>>(k*8+3))&31)*color5;
+                vertices[j].color[3]=1;
+            }
+            const uint32_t resource=uint32_t(materials.size());materials.push_back(m);
+            const unsigned indices[2][3]={{0,1,2},{1,2,3}};
+            for(unsigned j=0;j<2;++j) {
+                PsxPresentationTriangle t{};t.identity=p.address;t.resource=resource;t.flags=PSX_PRESENTATION_AFFINE_UV;
+                for(unsigned k=0;k<3;++k)t.vertices[k]=vertices[indices[j][k]];
+                triangles.push_back(t);
+            }
+            continue;
+        }
+        if((op&0xE0u)!=0x20u) { if(op!=0 && op!=1)++skipped;continue; }
+        const bool texture=(op&4)!=0,shaded=(op&16)!=0;
+        const unsigned n=(op&8)?4:3,stride=1+unsigned(texture)+unsigned(shaded);
+        if(p.words!=n*stride+unsigned(!shaded)) { ++skipped;continue; }
+        PsxPresentationMaterial material{};material.texture_version=f.texture_version;
+        material.texture_window=env.texture_window;
+        if(texture) {
+            material.texpage=uint16_t(w[2+stride]>>16);
+            env.mode=(env.mode&~511u)|(material.texpage&511u);
+            const uint32_t clut=w[2]>>16;material.clut_x=uint16_t((clut&63)*16);material.clut_y=uint16_t(clut>>6);
+            material.flags|=PSX_PRESENTATION_TEXTURED;
+            if(op&1)material.flags|=PSX_PRESENTATION_RAW_TEXTURE;
+        }
+        material.semi=(op&2)?int16_t((env.mode>>5)&3):-1;
+        if(env.mode&(1u<<11))material.flags|=PSX_PRESENTATION_MASK_SET;
+        if(env.mode&(1u<<12))material.flags|=PSX_PRESENTATION_MASK_CHECK;
+        if((env.mode&(1u<<9)) && ((texture && !(op&1)) || shaded))material.flags|=PSX_PRESENTATION_DITHER;
+        material.clip[0]=int16_t(env.area.left);material.clip[1]=int16_t(env.area.top);
+        material.clip[2]=int16_t(env.area.right);material.clip[3]=int16_t(env.area.bottom);
+        material.uv_limits[0]=material.uv_limits[1]=255;
+        PsxPresentationDrawVertex v[4]{};
+        for(unsigned j=0;j<n;++j) {
+            const uint32_t xy=w[1+j*stride];
+            v[j].x=((int32_t(xy&2047)^1024)-1024)+env.area.offset_x;
+            v[j].y=((int32_t((xy>>16)&2047)^1024)-1024)+env.area.offset_y;
+            const uint32_t color=shaded?w[j*stride]:w[0];
+            for(unsigned k=0;k<3;++k)v[j].color[k]=texture?float((color>>(k*8))&255)/255.0f:
+                float((color>>(k*8+3))&31)*color5;
+            v[j].color[3]=1;
+            if(texture) {
+                const uint32_t uv=w[2+j*stride];v[j].uv[0]=float(uv&255);v[j].uv[1]=float((uv>>8)&255);
+                for(unsigned k=0;k<2;++k) {
+                    material.uv_limits[k]=uint16_t(std::min(unsigned(material.uv_limits[k]),unsigned(v[j].uv[k])));
+                    material.uv_limits[k+2]=uint16_t(std::max(unsigned(material.uv_limits[k+2]),unsigned(v[j].uv[k])));
+                }
+            }
+        }
+        const uint32_t resource=uint32_t(materials.size());materials.push_back(material);
+        const unsigned indices[2][3]={{0,1,2},{1,2,3}};
+        for(unsigned j=0;j<(n==4?2u:1u);++j) {
+            PsxPresentationTriangle t{};t.identity=p.address;t.resource=resource;t.flags=PSX_PRESENTATION_AFFINE_UV;
+            for(unsigned k=0;k<3;++k)t.vertices[k]=v[indices[j][k]];
+            PsxPresentationSample sampled[3]{};bool qualified=geometry && clipped;
+            for(unsigned k=0;k<3 && qualified;++k) {
+                const unsigned vertex=indices[j][k];
+                const auto point=geometry->vertices.find(p.source[vertex]);
+                if(point==geometry->vertices.end()) {qualified=false;break;}
+                sampled[k]=point->second;sampled[k].identity=uint64_t(p.address)+1;
+                sampled[k].resource=resource;sampled[k].flags=PSX_PRESENTATION_AFFINE_UV;
+                sampled[k].rgba=0;
+                for(unsigned component=0;component<4;++component)
+                    sampled[k].rgba|=uint32_t(std::lround(std::max(0.0f,std::min(1.0f,v[vertex].color[component]))*255.0f))<<(component*8);
+                sampled[k].uv[0]=v[vertex].uv[0];sampled[k].uv[1]=v[vertex].uv[1];
+            }
+            if(qualified) {
+                auto camera=geometry->camera;camera.center_x+=env.area.offset_x;camera.center_y+=env.area.offset_y;
+                const PsxPresentationViewport viewport={double(material.clip[0]),double(material.clip[1]),double(material.clip[2])+1,double(material.clip[3])+1};
+                if(!psx_presentation_draw_samples(clipped.get(),sampled,3,&camera,&viewport)) {
+                    std::snprintf(reply,size_t(cap),"{\"error\":\"invalid sampled geometry\"}");return 0;
+                }
+                uint32_t count=0;const auto* output=psx_presentation_draw_triangles(clipped.get(),&count);
+                triangles.insert(triangles.end(),output,output+count);++sampled_triangles;continue;
+            }
+            triangles.push_back(t);
+        }
+    }
+    const GpuDrawArea& area=f.environment.area;
+    // One emulation-thread command boundary: guest execution cannot advance
+    // between the before/after observations. Export checks are deliberately
+    // separate from cadence/performance measurement.
+    const CPUState cpu_before=observed_cpu?*observed_cpu:CPUState{};
+    std::vector<uint32_t> ram_before(0x200000/4);
+    for(uint32_t i=0;i<ram_before.size();++i)ram_before[i]=psx_mod_read_word(i*4);
+    const uint16_t* vram=gpu_get_vram();
+    const std::vector<uint16_t> vram_before(vram,vram+1024*512);
+    std::vector<uint32_t> image_before(1024*512),image_after(1024*512);
+    int ow=0,oh=0,aw=0,ah=0;
+    const int before_pixels=gl_renderer_read_display_hires(int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1),
+        image_before.data(),int(image_before.size()),&ow,&oh);
+    const bool rendered=psx_presentation_gpu_render(triangles.data(),uint32_t(triangles.size()),materials.data(),uint32_t(materials.size()))!=0;
+    const int after_pixels=gl_renderer_read_display_hires(int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1),
+        image_after.data(),int(image_after.size()),&aw,&ah);
+    const bool cpu_same=observed_cpu && !std::memcmp(&cpu_before,observed_cpu,sizeof cpu_before);
+    bool ram_same=true;
+    for(uint32_t i=0;i<ram_before.size();++i)if(ram_before[i]!=psx_mod_read_word(i*4)) { ram_same=false;break; }
+    const bool vram_same=!std::memcmp(vram_before.data(),gpu_get_vram(),vram_before.size()*sizeof(uint16_t));
+    const bool image_same=before_pixels>0 && before_pixels==after_pixels && ow==aw && oh==ah &&
+        !std::memcmp(image_before.data(),image_after.data(),size_t(before_pixels)*sizeof(uint32_t));
+    const bool written=rendered && psx_presentation_gpu_write_png(path,int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1));
+    std::snprintf(reply,size_t(cap),"{\"rendered\":%s,\"written\":%s,\"triangles\":%u,\"skipped_commands\":%u,"
+        "\"cpu_unchanged\":%s,\"ram_unchanged\":%s,\"vram_unchanged\":%s,\"native_image_unchanged\":%s,"
+        "\"sampled_triangles\":%u,\"paired_vertices\":%u,\"alpha\":%.6f,\"mode\":\"%s\"}",
+        rendered?"true":"false",written?"true":"false",unsigned(triangles.size()),skipped,
+        cpu_same?"true":"false",ram_same?"true":"false",vram_same?"true":"false",image_same?"true":"false",
+        sampled_triangles,geometry?geometry->paired:0,geometry?geometry->alpha:1,
+        geometry?"geometry interpolation; native 4:3 prototype":"native geometry endpoint");
+    return written && cpu_same && ram_same && vram_same && image_same;
+}
 int command(const char* args, char* reply, int cap) {
     std::lock_guard<std::mutex> lock(published_mutex);
     const Frame* f = published.get();
+    if(args && !std::strcmp(args,"gpu on")) { gpu_capture=true;std::snprintf(reply,size_t(cap),"{\"gpu_capture\":true}");return 1; }
+    if(args && !std::strcmp(args,"gpu off")) { gpu_capture=false;std::snprintf(reply,size_t(cap),"{\"gpu_capture\":false}");return 1; }
+    if(args && !std::strcmp(args,"gpu resource-test")) {
+        const int ok=psx_presentation_gpu_test_versions();
+        std::snprintf(reply,size_t(cap),"{\"retained_texture_test\":%s}",ok?"true":"false");return ok;
+    }
+    if(args && !std::strcmp(args,"gpu pair")) {
+        if(!f || !f->texture_version || !held_gpu_frame) { std::snprintf(reply,size_t(cap),"{\"paired\":false}");return 0; }
+        auto a=copy_gpu_frame(*held_gpu_frame),b=copy_gpu_frame(*f);
+        if(!a || !b) { std::snprintf(reply,size_t(cap),"{\"paired\":false}");return 0; }
+        pair_gpu_old=std::move(a);pair_gpu_new=std::move(b);
+        std::snprintf(reply,size_t(cap),"{\"paired\":true,\"old_submission\":%llu,\"new_submission\":%llu}",
+            (unsigned long long)pair_gpu_old->serial,(unsigned long long)pair_gpu_new->serial);return 1;
+    }
+    if(args && !std::strncmp(args,"gpu interpolate ",16)) {
+        char* end=nullptr;const double alpha=std::strtod(args+16,&end);
+        if(!pair_gpu_old || !pair_gpu_new || !end || *end!=' ' || !std::isfinite(alpha) || alpha<0 || alpha>1) {
+            std::snprintf(reply,size_t(cap),"{\"error\":\"need a retained pair, alpha in [0,1], and output path\"}");return 0;
+        }
+        GeometrySamples sampled;
+        if(!geometry_samples(*pair_gpu_old,*pair_gpu_new,alpha,sampled)) {
+            const auto& m=sampled.camera_linear;
+            const auto& o=sampled.old_camera_linear;const auto& l=sampled.lens_linear;
+            std::snprintf(reply,size_t(cap),"{\"error\":\"%s\",\"camera_linear\":[%d,%d,%d,%d,%d,%d,%d,%d,%d],"
+                "\"old_camera_linear\":[%d,%d,%d,%d,%d,%d,%d,%d,%d],\"lens_linear\":[%d,%d,%d,%d,%d,%d,%d,%d,%d]}",
+                sampled.error,m[0],m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8],
+                o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7],o[8],l[0],l[1],l[2],l[3],l[4],l[5],l[6],l[7],l[8]);return 0;
+        }
+        return render_native_geometry(*pair_gpu_new,end+1,reply,cap,&sampled);
+    }
+    if(args && !std::strcmp(args,"gpu freeze")) {
+        if(!f || !f->texture_version) { std::snprintf(reply,size_t(cap),"{\"frozen\":false}");return 0; }
+        auto copy=std::make_unique<Frame>();*copy=*f;copy->texture_version=0;
+        if(!psx_presentation_gpu_retain(f->texture_version)) { std::snprintf(reply,size_t(cap),"{\"frozen\":false}");return 0; }
+        copy->texture_version=f->texture_version;held_gpu_frame=std::move(copy);
+        std::snprintf(reply,size_t(cap),"{\"frozen\":true,\"submission\":%llu}",(unsigned long long)f->serial);return 1;
+    }
+    if(args && !std::strncmp(args,"gpu render-held ",16)) {
+        if(!held_gpu_frame) { std::snprintf(reply,size_t(cap),"{\"error\":\"no retained frame\"}");return 0; }
+        return render_native_geometry(*held_gpu_frame,args+16,reply,cap);
+    }
+    if(args && !std::strncmp(args,"gpu render ",11))return f?render_native_geometry(*f,args+11,reply,cap):0;
     if (args && std::strcmp(args, "missing") == 0) {
         if (f) for (const Packet& p : f->packets) {
             const unsigned op = f->commands[p.first] >> 24;
@@ -603,6 +838,7 @@ int command(const char* args, char* reply, int cap) {
         "\"constructors\":%llu,\"lifetime_batches\":%llu,\"lifetime\":\"0x%016llX\","
         "\"world_root_batches\":%llu,\"root_domain\":%u,"
         "\"root_x\":%d,\"world_root_x\":%d,"
+        "\"gpu_snapshot\":%s,"
         "\"lifetime_qualified\":false}",
         int(active.load()), (unsigned long long)submissions.load(),
         (unsigned long long)batches.load(), (unsigned long long)rejected.load(),
@@ -621,7 +857,8 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)constructions.load(), (unsigned long long)lifetime_batches.load(),
         b ? (unsigned long long)b->lifetime : 0,
         (unsigned long long)world_root_batches.load(), b ? b->root_domain : 0,
-        b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0);
+        b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0,
+        f && f->texture_version?"true":"false");
     return 1;
 }
 }
