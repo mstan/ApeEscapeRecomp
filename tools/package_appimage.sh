@@ -350,7 +350,7 @@ psx_add_overlay_toolchain --stage "$payload" \
 cp "$player_toml" "$payload/game.toml"
 cp "$root/packaging/release/input.ini"      "$payload/input.ini"
 cp "$root/packaging/release/START_HERE.txt" "$payload/START_HERE.txt"
-cp "$root/LICENSE" "$root/README.md" "$payload/"
+cp "$root/LICENSE" "$root/PERMISSIONS.md" "$root/README.md" "$payload/"
 mkdir -p "$payload/docs"
 cp "$root/docs/AOT_OVERLAYS.md" "$payload/docs/"
 
