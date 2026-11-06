@@ -90,6 +90,16 @@ psxrecomp_add_runtime_target(psx-runtime
 )
 
 if(BUILD_TESTING)
+    add_executable(ape_presentation_capture_test
+        tests/test_presentation_capture.cpp src/mods/ape_presentation_capture.cpp)
+    target_include_directories(ape_presentation_capture_test PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
+    target_compile_definitions(ape_presentation_capture_test PRIVATE PSX_MOD_DEVELOPER_CHANNEL=1)
+    if(MSVC)
+        target_compile_options(ape_presentation_capture_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(ape_presentation_capture_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME ape_presentation_capture_test COMMAND ape_presentation_capture_test)
     add_executable(ape_stick_response_test
         tests/test_stick_response.c
         "${PSXRECOMP_ROOT}/runtime/src/psx_stick.c"

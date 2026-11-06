@@ -38,6 +38,16 @@ int main(int argc, char** argv) {
     if (argc != 3) return fail("expected preloaded and development mods roots");
 
     const fs::path source(argv[1]);
+    {
+        PSXRecompV4::ModPackage capture;
+        std::string error;
+        if (!PSXRecompV4::ModPackageManager::read_manifest(
+                fs::path(argv[2]) / "packages/ape.development.scene-capture/1.0.0/manifest.toml",
+                capture, &error)) return fail("capture manifest: " + error);
+        if (capture.features.size() != 1 || capture.features.front().default_enabled ||
+            capture.features.front().channel != PSXRecompV4::ModChannel::Developer)
+            return fail("capture must remain developer-only and default-off");
+    }
     const fs::path root =
         fs::temp_directory_path() / "apeescape-preloaded-mods-test";
     std::error_code ec;
