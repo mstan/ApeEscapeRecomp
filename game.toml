@@ -18,7 +18,42 @@ bios_config = "psxrecomp-v4/bios/SCPH1001.toml"
 # bios_thunks = "seeds/apeescape_bios_thunks.txt"  # optional; add once BIOS thunks are inventoried
 out_dir = "generated"
 strict = true
-mod_instruction_sites = ["0x80028CD0", "0x80016A74", "0x80016B44", "0x80016B8C", "0x800161C4", "0x80016260", "0x8001628C"]
+mod_instruction_sites = [
+    "0x80015AC4",
+    "0x80015B34",
+    "0x80015BA8",
+    "0x80015C3C",
+    "0x80015D14",
+    "0x80028CD0",
+    "0x80016A74",
+    "0x80016B44",
+    "0x80016B8C",
+    "0x800161C4",
+    "0x80016260",
+    "0x8001628C",
+    "0x800160F0",
+    "0x8001618C",
+    "0x800161B8",
+    "0x8001629C",
+    "0x80016394",
+    "0x80016514",
+    "0x80016690",
+    "0x8001680C",
+    "0x80043E68",
+    "0x80043F18",
+    "0x80043FC8",
+    "0x800440C4",
+    "0x8004412C",
+    "0x80044820",
+    "0x800448DC",
+    "0x80044998",
+    "0x8001DF6C",
+    "0x8001E0CC",
+    "0x8001E20C",
+    "0x8001E408",
+    "0x8001E5FC",
+    "0x8001E7F4",
+]
 
 [runtime]
 debug_port = 4480
