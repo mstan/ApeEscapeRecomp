@@ -1,3 +1,4 @@
+#include "gpu_gl_renderer.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "pgxp.h"
@@ -88,8 +89,10 @@ extern "C" int psx_presentation_gpu_output_ready(uint64_t version) {return fake_
 extern "C" int psx_presentation_gpu_write_png(const char*,int,int,int,int) {return fake_gpu;}
 extern "C" int psx_presentation_gpu_test_versions() {return 0;}
 extern "C" const uint16_t* gpu_get_vram() {static uint16_t vram[1024*512]{};return vram;}
-extern "C" int gl_renderer_read_display_hires(int,int,int,int,uint32_t* out,int,int* width,int* height) {
+extern "C" int gl_renderer_scale_info(GlScaleInfo* out) { *out={};out->effective=3;return fake_gpu; }
+extern "C" int gl_renderer_read_display_hires(int,int,int w,int h,uint32_t* out,int capacity,int* width,int* height) {
     if(!fake_gpu)return 0;
+    assert(capacity>=w*h*9);
     *width=*height=2;for(unsigned i=0;i<4;++i)out[i]=0x12345678;return 4;
 }
 extern "C" int gl_renderer_accurate_blending() {return 1;}

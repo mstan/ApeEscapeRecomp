@@ -1003,7 +1003,14 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
     for(uint32_t i=0;i<ram_before.size();++i)ram_before[i]=psx_mod_read_word(i*4);
     const uint16_t* vram=gpu_get_vram();
     const std::vector<uint16_t> vram_before(vram,vram+1024*512);
-    std::vector<uint32_t> image_before(1024*512),image_after(1024*512);
+    GlScaleInfo scale{};
+    if(!gl_renderer_scale_info(&scale) || scale.effective<1 || scale.effective>64) {
+        std::snprintf(reply,size_t(cap),"{\"error\":\"native raster scale unavailable\"}");return 0;
+    }
+    const size_t image_capacity=size_t(area.right-area.left+1)*size_t(area.bottom-area.top+1)*
+        size_t(scale.effective)*size_t(scale.effective);
+    if(!image_capacity || image_capacity>size_t(INT32_MAX))return 0;
+    std::vector<uint32_t> image_before(image_capacity),image_after(image_capacity);
     int ow=0,oh=0,aw=0,ah=0;
     const int before_pixels=gl_renderer_read_display_hires(int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1),
         image_before.data(),int(image_before.size()),&ow,&oh);
