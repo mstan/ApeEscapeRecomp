@@ -1,0 +1,24 @@
+format_version = 11
+id = "ape.enhancement.geometry-interpolation"
+version = "1.0.0"
+name = "Geometry Interpolation"
+author = "mstan"
+description = "60 FPS presentation from original camera, model and terrain geometry. Gameplay retains its native cadence."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "geometry-interpolation"
+name = "60 FPS geometry interpolation"
+description = "Smooth supported gameplay on OpenGL. Native presentation is used when a complete geometry pair is unavailable."
+group = "Display"
+default_enabled = false
+
+[[plugin]]
+feature = "geometry-interpolation"
+id = "ape.presentation.capture"
+netplay = "host_only"

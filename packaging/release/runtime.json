@@ -1,10 +1,10 @@
 {
-  "version": "v0.5.6",
+  "version": "v0.5.7",
   "renderer_backend": "source",
   "selection": "source-build",
   "debug_tools": false,
-  "game_code_base": "18513a001f18173796e5f915ab7bc77d6082d183",
-  "framework_commit": "395ed4ffb5ca07b581174722993d0f415aad3d7c",
+  "game_code_base": "994cda3a64e37a0ab3ba6dc27d55e6424bd33345",
+  "framework_commit": "1b84d4fd3a1c65f64c2d97b49320f769ba2e01fc",
   "external_hle_inputs": false,
-  "note": "Source-built renderer with dithering in Mods > Image Filtering, restored video controls and Vulkan enabled. Shared public selective-PGO release pipeline; no external HLE inputs."
+  "note": "Source-built renderer with optional default-off geometry interpolation at 60 FPS, prop visibility and terrain continuity fixes. Retains latest Settings/dithering/quicksave, Vulkan and Fit to screen. Shared audited public release pipeline; no external HLE inputs."
 }

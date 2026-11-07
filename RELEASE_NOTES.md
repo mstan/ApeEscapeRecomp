@@ -1,5 +1,16 @@
 # Ape Escape release notes
 
+## v0.5.7 - geometry interpolation and terrain continuity
+
+- Add optional **Geometry Interpolation > 60 FPS geometry interpolation** in Mods. OpenGL samples explicit camera, model and terrain geometry while gameplay retains its native cadence. The feature defaults off.
+- Retire the previous blending, reprojection and draw-replay implementations. Unsupported scenes and unavailable geometry pairs use native presentation; display-rate output is not included.
+- Keep mailboxes visible within the resident terrain range and preserve separate lifetimes for reused mailbox models.
+- Capture the original terrain and flat-textured subdivision edges so adjoining surfaces move together. Preserve the native camera projection separately from its authored orientation.
+- Retain dithering controls, direct quicksave/hotkeys, default Fit to screen and existing saved choices. CD Speed and Fast Loading packages remain excluded.
+
+Opening-level movement, camera turns, real jumps and current-build save/load were checked at 3x internal resolution, including matched Native/60 FPS guest-state fingerprints and retained-resource checks. Full-game coverage is not claimed. Fresh profiles retain the 4x Internal Resolution default. Native memory cards are preserved; save states remain build-specific.
+
+
 ## v0.5.6 - dithering control
 
 - Add Dithering to **Mods > Image Filtering**: Game default, Off, Native (PS1) and Fine. These choices control the existing OpenGL renderer; other backends retain the preference for the next OpenGL session.

@@ -1,9 +1,9 @@
 # Explicit presentation source capture
 
-`src/mods/ape_presentation_capture.cpp` is a developer-only, default-off
-qualification producer. It exports retained geometry phases and can present
-60 FPS intermediate geometry during the qualified gameplay phase.
-The preloaded/release catalog excludes its package.
+`src/mods/ape_presentation_capture.cpp` supplies the default-off Geometry
+Interpolation package. Normal package activation starts 60 FPS presentation
+during the qualified gameplay phase. Retained-phase export and source
+diagnostics remain separate qualification commands.
 
 For SCUS-94423, guarded instruction hooks observe the original skeletal
 projector at `80016A74`/`80016B44`, rigid projector at
@@ -104,8 +104,8 @@ Display-rate scheduling remains unimplemented.
 explicit packet lineage across submissions, multiple commands per node, rigid
 and world layouts, all quarter-turns, terrain indices, subdivision parents,
 bounded list rejection and reset.
-`ape_preloaded_mods_test` checks the development manifest and its exclusion
-from the preloaded catalog. Muted original-disc software/headless runs have
+`ape_preloaded_mods_test` checks visible, default-off package selection and
+its normal presentation activation. Muted original-disc software/headless runs have
 reached first-level gameplay and exercised these projection paths and packet
 transport without tuple rejection, invalid lists, overflow or failed token
 tagging. Partial and untracked polygons remain explicit. This does not establish

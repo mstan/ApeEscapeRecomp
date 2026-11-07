@@ -22,7 +22,6 @@
 #include <unordered_set>
 #include <vector>
 
-#if defined(PSX_MOD_DEVELOPER_CHANNEL) && PSX_MOD_DEVELOPER_CHANNEL
 extern "C" int gte_geometry_correction_enabled(void);
 
 /* SCUS-94423 original-code seams, verified against the boot EXE:
@@ -34,8 +33,8 @@ extern "C" int gte_geometry_correction_enabled(void);
  * The captured data is host-only. No guest instructions are replayed and no
  * guest CPU, RAM, GTE, timing, visibility or packet output is changed.
  * Descriptor addresses are provenance, not yet qualified lifetime identities.
- * This development-only producer leaves live presentation disabled until an
- * explicit request enables it. */
+ * The package is optional and default-off. Its activation starts the qualified
+ * 60 FPS presenter; unsupported scenes continue through the native presenter. */
 namespace {
 constexpr const char* Plugin = "ape.presentation.capture";
 constexpr size_t MaxBatches = 8192;
@@ -196,7 +195,7 @@ void deactivate() {
     live_enabled=false;active = false; gpu_capture=false; reset(); pgxp_set_source_tracking(0);
 }
 void activate() {
-    active = false; open = false;
+    active = false; open = false; gpu_capture=false;
     psx_presentation_gpu_acquire();
     live_enabled=false;live_frames=live_misses=live_cpu_ns=live_max_ns=0;
     live_prepared=0;
@@ -223,6 +222,10 @@ void activate() {
     reported_typed = reported_height = reported_edge = false;
     if (!pgxp_set_source_tracking(1)) return;
     active = true; reset();
+}
+void activate_live() {
+    activate();
+    gpu_capture=active.load();live_enabled=active.load();
 }
 void constructed(CPUState* cpu, uint32_t pc) {
     if (!open) return;
@@ -1321,7 +1324,7 @@ int command(const char* args, char* reply, int cap) {
 }
 PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_presentation_gpu_set_provider(live_present,nullptr);
-    psx_mod_register_activation_plugin(Plugin, activate);
+    psx_mod_register_activation_plugin(Plugin, activate_live);
     psx_mod_register_session_reset_plugin(Plugin, deactivate);
     psx_mod_register_savestate_plugin(Plugin, reset);
     psx_mod_register_instruction_plugin(Plugin, 0x8002FF50u, 0x8C880000u, camera_composition_before);
@@ -1363,4 +1366,3 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_instruction_plugin(Plugin, 0x8001E828u, 0x27BDFFC0u, subdivided);
     psx_mod_register_command("ape.presentation.capture", command);
 }
-#endif

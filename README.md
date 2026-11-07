@@ -69,7 +69,7 @@ so treat it as a very playable preview rather than a certified full playthrough.
 | FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
 | Mods | ✅ Built-in catalog with Ape-specific and framework-owned enhancements |
 | Widescreen 16:9 / 21:9 / Adaptive | ✅ Opt-in 16:9, 21:9, and live-window adaptive modes |
-| Geometry interpolation | Development-only 60 FPS pilot; display-rate support remains in development |
+| Geometry interpolation | Optional 60 FPS on OpenGL; display-rate support remains in development |
 | Full playthrough | ⚠️ Not yet verified end-to-end |
 
 ### Built-in mods
@@ -79,6 +79,7 @@ The launcher's **Mods** page includes these bundled enhancements:
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
   **Adaptive** (live window aspect from 4:3 through 21:9).
+- **Geometry Interpolation** presents intermediate camera, model and terrain geometry at 60 FPS on OpenGL. It defaults off and keeps native presentation for unsupported scenes.
 - **PGXP** adds subpixel geometry and perspective-correct textures. Internal
   resolution, texture filtering and FMV filtering remain configurable in Settings.
 - **Skip FMVs** ends movies through the game's normal completion path.

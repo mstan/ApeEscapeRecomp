@@ -2,6 +2,7 @@
 #include "mod_media.h"
 
 #include <filesystem>
+#include <algorithm>
 #include <iostream>
 #include <string>
 
@@ -42,11 +43,14 @@ int main(int argc, char** argv) {
         PSXRecompV4::ModPackage capture;
         std::string error;
         if (!PSXRecompV4::ModPackageManager::read_manifest(
-                fs::path(argv[2]) / "packages/ape.development.scene-capture/1.0.0/manifest.toml",
+                source / "packages/ape.enhancement.geometry-interpolation/1.0.0/manifest.toml",
                 capture, &error)) return fail("capture manifest: " + error);
         if (capture.features.size() != 1 || capture.features.front().default_enabled ||
-            capture.features.front().channel != PSXRecompV4::ModChannel::Developer)
-            return fail("capture must remain developer-only and default-off");
+            capture.features.front().channel != PSXRecompV4::ModChannel::Stable ||
+            capture.features.front().hidden)
+            return fail("geometry interpolation must be visible, stable and default-off");
+        if (fs::exists(fs::path(argv[2]) / "packages/ape.development.scene-capture"))
+            return fail("development capture package must not remain in the catalog");
     }
     const fs::path root =
         fs::temp_directory_path() / "apeescape-preloaded-mods-test";
@@ -73,7 +77,7 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 5) return fail("expected five package manifests");
+    if (manifest_count != 6) return fail("expected six package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
@@ -83,6 +87,7 @@ int main(int argc, char** argv) {
              "ape.fmv.skip",
              "ape.gadgets.quick-select",
              "ape.fix.prop-visibility",
+             "ape.presentation.capture",
              "psx.pgxp"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
             return fail(std::string("could not register test plugin ") + id);
@@ -92,8 +97,8 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 5)
-        return fail("expected five package families");
+    if (manager.packages().size() != 6)
+        return fail("expected six package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
@@ -104,6 +109,15 @@ int main(int argc, char** argv) {
         default_plan.plugins.back().id != "psx.pgxp") {
         return fail("default catalog did not enable Skip FMVs, Fit to screen, prop visibility and PGXP");
     }
+    if (!manager.set_feature_enabled("ape.enhancement.geometry-interpolation",
+            "geometry-interpolation", true, &error)) return fail(error);
+    const auto geometry_plan = manager.resolve(kGameId, "", kDiscSha256);
+    if (!geometry_plan.ok || geometry_plan.plugins.size() != 5 ||
+        std::none_of(geometry_plan.plugins.begin(),geometry_plan.plugins.end(),
+            [](const auto& plugin) {return plugin.id == "ape.presentation.capture";}))
+        return fail("enabled geometry interpolation did not select the presenter");
+    if (!manager.set_feature_enabled("ape.enhancement.geometry-interpolation",
+            "geometry-interpolation", false, &error)) return fail(error);
     if (!manager.set_feature_enabled(
             "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error) ||
         !manager.set_feature_enabled(

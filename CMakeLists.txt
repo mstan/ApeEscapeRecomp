@@ -104,7 +104,6 @@ if(BUILD_TESTING)
         "${PSXRECOMP_ROOT}/runtime/src/presentation_scene.c"
         "${PSXRECOMP_ROOT}/runtime/src/presentation_draw.c")
     target_include_directories(ape_presentation_capture_test PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
-    target_compile_definitions(ape_presentation_capture_test PRIVATE PSX_MOD_DEVELOPER_CHANNEL=1)
     if(MSVC)
         target_compile_options(ape_presentation_capture_test PRIVATE /UNDEBUG)
     else()

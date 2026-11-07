@@ -92,7 +92,8 @@ guest_cycle_scale_gate = { addr = 0x800F447C, size = 1, value = 3 }
 auto_skip_fmv = false
 offer_skip_fmv = false
 
-# Frame interpolation is excluded from the public catalog. Keep its generic
+# Legacy generic interpolation controls remain retired. The title-owned
+# Geometry Interpolation package exposes the qualified 60 FPS path. Keep generic
 # controls hidden and ignore stale settings.toml values.
 offer_frame_interpolation = false
 

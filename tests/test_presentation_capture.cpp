@@ -140,7 +140,11 @@ int main() {
     assert(activation && restore && session_reset && query);
     assert(hooks().size()==37 && hooks().at(0x80016B44).word==0xE88C0000);
     assert(report().find("\"active\":0")!=std::string::npos);
-    activation();CPUState cpu{};
+    activation();
+    assert(report("gpu live").find("\"live\":true")!=std::string::npos);
+    // Normal package activation starts live presentation. Explicit capture-only
+    // qualification remains available for the source transport checks below.
+    report("capture on");CPUState cpu{};
     const uint32_t d=0x80001000, asset=0x80002000, v=0x80003000, m=0x80004000, spans=0x80005000;
     for (uint32_t descriptor : {d,d+32}) {
         word(descriptor,asset);word(descriptor+12,spans);word(descriptor+16,v);word(descriptor+20,m);
