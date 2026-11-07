@@ -138,7 +138,7 @@ extern "C" uint16_t psx_mod_read_half(uint32_t address) {
 }
 int main() {
     assert(activation && restore && session_reset && query);
-    assert(hooks().size()==34 && hooks().at(0x80016B44).word==0xE88C0000);
+    assert(hooks().size()==37 && hooks().at(0x80016B44).word==0xE88C0000);
     assert(report().find("\"active\":0")!=std::string::npos);
     activation();CPUState cpu{};
     const uint32_t d=0x80001000, asset=0x80002000, v=0x80003000, m=0x80004000, spans=0x80005000;
@@ -323,6 +323,31 @@ int main() {
     assert(!sources.count(seed+8)); // a different call shape cannot borrow this recipe
     cpu.gpr[7]=1;sources.erase(seed+24);call(0x8001DB74u,cpu);
     assert(!sources.count(seed+8)); // missing lineage is never reconstructed by value
+    cpu.gpr[31]=0;
+    // Flat-textured patches have a different child stride. Capture all six
+    // original edges before children consume them, including delay-slot stores.
+    const unsigned flat_edges[][6]={
+        {0x8001EC04u,0,8,60,1,0}, {0x8001ED20u,0,16,68,2,0},
+        {0x8001E828u,8,16,76,0,0x8001EE38u},
+        {0x8001E828u,8,24,76,1,0x8001EFF0u},
+        {0x8001E828u,16,24,68,2,0x8001F1A8u},
+        {0x8001E828u,0,16,52,2,0x8001F368u}};
+    for(const auto& edge:flat_edges) {
+        word(block+edge[1],100);word(block+edge[1]+4,200);
+        word(block+edge[2],101);word(block+edge[2]+4,201);
+        const uint32_t xy=100u | (edge[4]==2 ? 1u<<16 : 0u);
+        word(block+edge[3],xy);word(block+edge[3]+4,200);
+        sources[block+edge[1]]=gte_source[0];sources[block+edge[2]]=gte_source[1];
+        sources.erase(block+edge[3]);cpu.gpr[17]=block;cpu.gpr[6]=block+52;cpu.gpr[31]=edge[5];
+        const CPUState before=cpu;call(edge[0],cpu);
+        assert(!std::memcmp(&before,&cpu,sizeof cpu));
+        assert(sources.count(block+edge[3]) && sources.at(block+edge[3])!=gte_source[0]);
+        assert(psx_mod_read_word(block+edge[3])==xy);
+        sources.erase(block+edge[2]);sources.erase(block+edge[3]);call(edge[0],cpu);
+        assert(!sources.count(block+edge[3]));
+    }
+    cpu.gpr[31]=0x8001EE38u;cpu.gpr[6]=block+64;call(0x8001E828u,cpu);
+    assert(!sources.count(block+76)); // GT4's child layout cannot borrow an FT4 recipe
     cpu.gpr[31]=0;
     for(uint32_t pc : {0x80015BA8u,0x80015C3Cu,0x80015D14u}) {
         const uint32_t descriptor=d+64;

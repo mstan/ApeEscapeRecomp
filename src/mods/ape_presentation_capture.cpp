@@ -761,6 +761,22 @@ void subdivided(CPUState* cpu, uint32_t pc) {
         // directly to the shared call: its corner 1 is an existing vertex.
         if(cpu->gpr[11]!=0x1F80033Cu && cpu->gpr[12]!=0x1F80033Cu)return;
         block=cpu->gpr[6];a=0;b=24;out=8;style=1;
+    } else if(pc==0x8001EC04u || pc==0x8001ED20u || pc==0x8001E828u) {
+        // Original flat-textured subdivision (8001E828) uses the same
+        // projective edge recipes with a 52-byte child block, not GT4's 64.
+        if(pc==0x8001E828u) {
+            if(cpu->gpr[6]!=block+52)return;
+            pc=cpu->gpr[31]; // recursive JAL delay slot has stored the last half
+        }
+        switch(pc) {
+            case 0x8001EC04: a=0;b=8;out=60;style=1;break;
+            case 0x8001ED20: a=0;b=16;out=68;style=2;break;
+            case 0x8001EE38: a=8;b=16;out=76;break;
+            case 0x8001EFF0: a=8;b=24;out=76;style=1;break;
+            case 0x8001F1A8: a=16;b=24;out=68;style=2;break;
+            case 0x8001F368: a=0;b=16;out=52;style=2;break;
+            default:return;
+        }
     } else {
         if(pc==0x8001DB74u) {
             // The last half is written in the recursive JAL delay slot.
@@ -1342,6 +1358,9 @@ PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_mod_register_instruction_plugin(Plugin, 0x8001DF70u, 0x48994800u, subdivided);
     psx_mod_register_instruction_plugin(Plugin, 0x8001E0D0u, 0x48994800u, subdivided);
     psx_mod_register_instruction_plugin(Plugin, 0x8001DB74u, 0x27BDFFC0u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001EC04u, 0x86220000u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001ED20u, 0x86220008u, subdivided);
+    psx_mod_register_instruction_plugin(Plugin, 0x8001E828u, 0x27BDFFC0u, subdivided);
     psx_mod_register_command("ape.presentation.capture", command);
 }
 #endif

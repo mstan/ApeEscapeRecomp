@@ -54,6 +54,9 @@ mod_instruction_sites = [
     "0x8001DF70",
     "0x8001E0D0",
     "0x8001DB74",
+    "0x8001EC04",
+    "0x8001ED20",
+    "0x8001E828",
 ]
 
 [runtime]

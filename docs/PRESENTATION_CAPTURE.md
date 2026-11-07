@@ -1,15 +1,16 @@
 # Explicit presentation source capture
 
 `src/mods/ape_presentation_capture.cpp` is a developer-only, default-off
-qualification producer. It exports retained geometry phases but does not present
-live intermediate frames.
+qualification producer. It exports retained geometry phases and can present
+60 FPS intermediate geometry during the qualified gameplay phase.
 The preloaded/release catalog excludes its package.
 
 For SCUS-94423, guarded instruction hooks observe the original skeletal
 projector at `80016A74`/`80016B44`, rigid projector at
 `800161C4`/`80016260`, uncompressed world projector at
 `800160F0`/`8001618C`, all four typed world quarter-turn loops, and the
-terrain grid's original RTPT/RTPS sites. Each captured batch owns the original local SVECTORs,
+terrain grid's original RTPT/RTPS sites, and both flat-textured and Gouraud
+subdivision routines. Each captured batch owns the original local SVECTORs,
 matrix words, global camera words, native SXY/SZ and projection controls.
 Captured inputs must equal the live GTE inputs. Typed world batches retain
 both authored vertices and the separate quarter-turn/origin transform; terrain
@@ -59,15 +60,13 @@ Leaf projection scopes belong to their original guest call frames and survive
 nested draws, other guest stacks and ordering-table submissions. Stack/return
 registers delimit the activation only; they never identify corresponding
 vertices or objects. Return hooks retire each scope. Reset discards all scopes.
-Resource versions, remaining geometry producers (including other subdivision
-paths), lifetime events, camera
-domains and display deadlines still need qualification before this data can
-enable interpolation. The debug reply therefore reports
+Full-game source coverage, lifetime events, camera domains and display-rate
+scheduling still require qualification. The debug reply therefore reports
 `lifetime_qualified:false`.
 
 The developer command `gpu on` retains an immutable GPU texture version with
 each submission. `gpu render <path>` draws captured polygons and rectangles into
-a separate target and exports a native-resolution PNG. It performs same-command
+a separate target and exports a PNG at the effective internal resolution. It performs same-command
 CPU, RAM, CPU-VRAM and native GPU image checks; the guest cannot advance between
 those observations. The old debug `pause` command is unsupported and must not
 be used to compare separate live-frame observations as though they were frozen.
@@ -87,14 +86,19 @@ through `8002FF50`, and its 3040/4096 Y scale is projection rather than rotation
 The adapter removes that observed scale from view coordinates and retains it
 in the projection. Unsupported non-diagonal lenses are rejected. This uses
 original matrix operands, without fitting a camera to screen coordinates.
+The original look-at constructor also supplies its explicit eye, look vector
+and roll. A proper rigid orientation is retained separately from the exact
+native linear view adjustment. All eight matrix words and the constructor
+lens must retain their write-invalidated provenance before this path is used.
 
 This is a retained-pair qualification prototype. It currently renders the newer
 submission's visible command topology, and leaves unsupported/unknown geometry
 at native positions. Skipped commands and sampled triangles are reported
 explicitly. Full topology/visibility, effective widescreen/FOV, remaining geometry
-domains and discontinuities still require qualification. It does not present
-live intermediate frames. GPU-owner synchronization in these debug entry points
-is not a qualified high-refresh scheduling path.
+domains and discontinuities still require qualification. `gpu live on` prepares
+a midpoint on publication and selects it nonblocking on the repeated native
+present. Native simulation and presentation deadlines continue normally.
+Display-rate scheduling remains unimplemented.
 
 `ape_presentation_capture_test` verifies read-only hooks, distinct instances,
 explicit packet lineage across submissions, multiple commands per node, rigid

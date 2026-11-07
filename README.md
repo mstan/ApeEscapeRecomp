@@ -69,20 +69,16 @@ so treat it as a very playable preview rather than a certified full playthrough.
 | FMV / audio | ✅ MDEC video + XA/SPU audio (auto-skip FMV optional) |
 | Mods | ✅ Built-in catalog with Ape-specific and framework-owned enhancements |
 | Widescreen 16:9 / 21:9 / Adaptive | ✅ Opt-in 16:9, 21:9, and live-window adaptive modes |
-| Interpolated rendering | ✅ Opt-in display / 60 / 90 / 120 / 144 / 165 / 240 FPS |
+| Geometry interpolation | Development-only 60 FPS pilot; display-rate support remains in development |
 | Full playthrough | ⚠️ Not yet verified end-to-end |
 
 ### Built-in mods
 
-The launcher's **Mods** page includes four Ape-specific bundled enhancements:
+The launcher's **Mods** page includes these bundled enhancements:
 
 - **Ape Escape Widescreen** moves the existing game-specific enhancement out
   of generic Video settings. Its picker offers **16:9**, **21:9**, and
   **Adaptive** (live window aspect from 4:3 through 21:9).
-- **Ape Escape Frame Interpolation** redraws intermediate camera and model
-  transforms using the game drawing code. Display refresh and fixed output
-  rates leave simulation, timers, audio and input at their stock cadence.
-  Existing Frame Smoothing selections use interpolation automatically.
 - **PGXP** adds subpixel geometry and perspective-correct textures. Internal
   resolution, texture filtering and FMV filtering remain configurable in Settings.
 - **Skip FMVs** ends movies through the game's normal completion path.
@@ -155,7 +151,7 @@ build of the game's code.
 
 ## v0.4.0 rendering update
 
-Game-code interpolation replaces Frame Smoothing while retaining saved rate selections. Adds internal-resolution presets, PGXP geometry/perspective correction and filtering options. Fixes the GPU foreground classification behind flickering black wall polygons. The memory-card menu uses its native layout in widescreen. Late beach-ball appearance remains under investigation.
+Adds internal-resolution presets, PGXP geometry/perspective correction and filtering options. Fixes the GPU foreground classification behind flickering black wall polygons. The memory-card menu uses its native layout in widescreen. Late beach-ball appearance remains under investigation.
 
 ## v0.5.1 crowded-scene timing fix
 
