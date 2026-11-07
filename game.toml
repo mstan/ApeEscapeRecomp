@@ -19,6 +19,7 @@ bios_config = "psxrecomp-v4/bios/SCPH1001.toml"
 out_dir = "generated"
 strict = true
 mod_instruction_sites = [
+    "0x80071B80",
     "0x8002FF50",
     "0x800300A4",
     "0x80015AC4",

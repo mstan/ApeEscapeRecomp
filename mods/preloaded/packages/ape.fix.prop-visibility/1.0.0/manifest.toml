@@ -1,0 +1,23 @@
+format_version = 5
+id = "ape.fix.prop-visibility"
+version = "1.0.0"
+name = "Ape Escape Prop Visibility"
+author = "mstan"
+description = "Keeps resident mailboxes visible inside the terrain renderer's distance bound."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "prop-visibility"
+name = "Prop visibility correction"
+description = "Aligns the mailbox render distance with the current resident-world far plane."
+default_enabled = true
+hidden = true
+
+[[plugin]]
+feature = "prop-visibility"
+id = "ape.fix.prop-visibility"

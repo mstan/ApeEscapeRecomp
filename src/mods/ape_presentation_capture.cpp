@@ -1004,7 +1004,7 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
         rendered?"true":"false",written?"true":"false",unsigned(triangles.size()),skipped,draws.resource_copies,skipped_ops,
         cpu_same?"true":"false",ram_same?"true":"false",vram_same?"true":"false",image_same?"true":"false",
         sampled_triangles,geometry?geometry->paired:0,geometry?geometry->derived:0,geometry?geometry->alpha:1,
-        geometry?"geometry interpolation; native 4:3 prototype":"native geometry endpoint");
+        geometry?"geometry interpolation":"native geometry endpoint");
     return written && cpu_same && ram_same && vram_same && image_same;
 }
 int command(const char* args, char* reply, int cap) {

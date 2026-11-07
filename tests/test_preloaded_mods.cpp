@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 4) return fail("expected four package manifests");
+    if (manifest_count != 5) return fail("expected five package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
              "ape.widescreen.adaptive",
              "ape.fmv.skip",
              "ape.gadgets.quick-select",
+             "ape.fix.prop-visibility",
              "psx.pgxp"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
             return fail(std::string("could not register test plugin ") + id);
@@ -91,16 +92,17 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 4)
-        return fail("expected four package families");
+    if (manager.packages().size() != 5)
+        return fail("expected five package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
-        default_plan.plugins.size() != 3 ||
+        default_plan.plugins.size() != 4 ||
         default_plan.plugins.front().id != "ape.fmv.skip" ||
         default_plan.plugins[1].id != "ape.widescreen.adaptive" ||
+        default_plan.plugins[2].id != "ape.fix.prop-visibility" ||
         default_plan.plugins.back().id != "psx.pgxp") {
-        return fail("default catalog did not enable Skip FMVs, Fit to screen and PGXP");
+        return fail("default catalog did not enable Skip FMVs, Fit to screen, prop visibility and PGXP");
     }
     if (!manager.set_feature_enabled(
             "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error) ||
@@ -123,8 +125,9 @@ int main(int argc, char** argv) {
             return fail(error);
         }
         const auto plan = manager.resolve(kGameId, "", kDiscSha256);
-        if (!plan.ok || plan.plugins.size() != 1 ||
-            plan.plugins.front().id != plugin) {
+        if (!plan.ok || plan.plugins.size() != 2 ||
+            plan.plugins.front().id != plugin ||
+            plan.plugins.back().id != "ape.fix.prop-visibility") {
             return fail(std::string("wrong widescreen plugin for ") + choice);
         }
     }
@@ -147,8 +150,9 @@ int main(int argc, char** argv) {
      * plugin-count assertion passes either way while the patch does nothing.
      */
     const auto quick_select_plan = manager.resolve(kGameId, "", kDiscSha256);
-    if (!quick_select_plan.ok || quick_select_plan.plugins.size() != 1 ||
-        quick_select_plan.plugins.front().id != "ape.gadgets.quick-select") {
+    if (!quick_select_plan.ok || quick_select_plan.plugins.size() != 2 ||
+        quick_select_plan.plugins.front().id != "ape.gadgets.quick-select" ||
+        quick_select_plan.plugins.back().id != "ape.fix.prop-visibility") {
         return fail("wrong Quick Gadget Select plugin plan");
     }
     if (quick_select_plan.writes.size() != 1)
@@ -170,11 +174,13 @@ int main(int argc, char** argv) {
         return fail(error);
     }
     const auto disabled_plan = manager.resolve(kGameId, "", kDiscSha256);
-    if (!disabled_plan.ok || !disabled_plan.writes.empty())
-        return fail("Quick Gadget Select patched guest code while disabled");
+    if (!disabled_plan.ok || !disabled_plan.writes.empty() ||
+        disabled_plan.plugins.size() != 1 ||
+        disabled_plan.plugins.front().id != "ape.fix.prop-visibility")
+        return fail("prop correction must remain enabled independently of enhancements");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 4 packages, default PGXP, "
+    std::cout << "Ape Escape preloaded mods: 5 packages, default PGXP and prop visibility, "
                  "3 widescreen choices, retired interpolation absent, "
                  "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "
