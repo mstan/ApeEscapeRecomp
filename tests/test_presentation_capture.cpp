@@ -521,6 +521,38 @@ int main() {
     call(0x800161C4,cpu);assert(sources[d]==restored_lifetime);
     // A same-value untracked overwrite within the epoch must still fail closed.
     sources.erase(d);word(d,asset);call(0x800161C4,cpu);assert(!sources[d]);
+    // Mailboxes share one template, but the original caller owns separate
+    // placement records. Identical local vertices must retain distinct lives.
+    activation();cpu={};
+    const uint32_t mailbox=0x800BBC54u,placements=0x800BBD34u,stack=0x80008000u;
+    word(mailbox,asset);word(mailbox+12,spans);word(mailbox+16,v);word(mailbox+20,m);
+    word(asset+4,1);word(spans,3);word(0x800BBC50u,2);
+    for(unsigned i=0;i<6;++i)word(v+4*i,i+1);
+    uint64_t mailbox_lives[2]{};
+    for(unsigned object=0;object<2;++object) {
+        const uint32_t owner=placements+object*24;
+        word(owner,0x08000000u);word(stack+4,owner);
+        cpu.gpr[29]=stack;cpu.gpr[31]=0x80071C28u;cpu.gpr[4]=mailbox;
+        call(0x80016A74u,cpu);mailbox_lives[object]=sources[owner];
+        assert(mailbox_lives[object]>>63);
+        cpu.gpr[4]=0x800E7D00u;cpu.gpr[3]=v;cpu.gpr[5]=0;
+        cpu.gpr[11]=0;cpu.gpr[15]=32;cpu.gpr[16]=m;cpu.gpr[25]=v;
+        for(unsigned i=0;i<6;++i)cpu.gte_data[i]=i+1;
+        for(unsigned i=0;i<3;++i){cpu.gte_data[12+i]=100+i;cpu.gte_data[17+i]=200+i;}
+        call(0x80016B44u,cpu);call(0x80016B8Cu,cpu);
+    }
+    assert(mailbox_lives[0]!=mailbox_lives[1]);
+    cpu.gpr[4]=ot;call(0x80028CD0u,cpu);
+    assert(report("0").find("\"owner\":"+std::to_string(placements))!=std::string::npos);
+    assert(report("1").find("\"owner\":"+std::to_string(placements+24))!=std::string::npos);
+    assert(report("1").find("\"last_batches\":2")!=std::string::npos);
+    // A same-value untracked owner write cuts continuity independently of
+    // the shared template. A malformed record cannot become an instance.
+    sources.erase(placements);word(placements,0x08000000u);word(stack+4,placements);
+    cpu.gpr[4]=mailbox;call(0x80016A74u,cpu);assert(!sources[placements]);
+    word(stack+4,placements+1);call(0x80016A74u,cpu);
+    cpu.gpr[4]=ot;call(0x80028CD0u,cpu);
+    assert(report().find("\"last_rejected\":1")!=std::string::npos);
     session_reset();assert(report().find("\"active\":0")!=std::string::npos);
     assert(!gpu_refs);
     std::cout<<"Ape explicit projection capture: read-only, distinct instances, packet lineage, bounded lists, reset PASS\n";

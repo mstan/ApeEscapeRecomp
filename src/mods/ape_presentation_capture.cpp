@@ -45,6 +45,7 @@ struct Batch {
     uint64_t source;
     uint64_t lifetime;
     uint32_t descriptor, asset, bone, vertex;
+    uint32_t owner; // original instance record; templates may serve several owners
     uint32_t local[6], matrix[8], root[8], camera[8], lens[8];
     uint32_t world_root[8], root_domain; // 0 unknown, 1 original pre-camera, 2 authored typed-world
     uint32_t native_xy[3], native_z[3], projection[3];
@@ -91,6 +92,7 @@ struct Frame {
 struct Scope {
     uint64_t lifetime = 0;
     uint32_t descriptor = 0, asset = 0, vertices = 0;
+    uint32_t owner = 0, owner_word = 0;
     uint32_t matrices = 0, spans = 0, bones = 0;
     uint32_t output = 0, count = 0;
     bool rigid = false;
@@ -446,7 +448,22 @@ void enter(CPUState* cpu, uint32_t pc) {
     if (!ram(header, 10, 2)) { ++writing->rejected; return; }
     Scope s;
     s.descriptor = descriptor; s.asset = header;
-    s.lifetime = lifetime(descriptor,header);
+    if(cpu->gpr[31]==0x80071C28u) {
+        // The original mailbox funnel passes a shared model template. Its
+        // placement pointer is the caller's saved s1, not a model identity.
+        // 80016A60 saves s1 at sp+4 before replacing it with the output arena.
+        const uint32_t count=psx_mod_read_word(0x800BBC50u);
+        if(!ram(cpu->gpr[29],8,4) || !count || count>4) {++writing->rejected;return;}
+        const uint32_t owner=psx_mod_read_word(cpu->gpr[29]+4);
+        if(owner<0x800BBD34u || (owner-0x800BBD34u)%24 ||
+            (owner-0x800BBD34u)/24>=count) {++writing->rejected;return;}
+        const uint32_t owner_word=psx_mod_read_word(owner),type=owner_word&0xFFFFu;
+        if(type>2 || descriptor!=(type<2 ? 0x800BBC54u : 0x800BBCC4u)) {
+            ++writing->rejected;return;
+        }
+        s.owner=owner;s.owner_word=owner_word;
+    }
+    s.lifetime=lifetime(s.owner ? s.owner : descriptor,s.owner ? s.owner_word : header);
     s.bones = psx_mod_read_half(header + 4);
     s.vertices = psx_mod_read_word(descriptor + 16);
     s.matrices = psx_mod_read_word(descriptor + 20);
@@ -465,7 +482,9 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
     Batch b{};
     b.source = next_source;
     b.descriptor = scope.descriptor; b.asset = scope.asset;
-    if (scope.lifetime && pgxp_load_source(scope.descriptor,scope.asset)==scope.lifetime)
+    b.owner=scope.owner ? scope.owner : scope.descriptor;
+    const uint32_t owner_word=scope.owner ? scope.owner_word : scope.asset;
+    if (scope.lifetime && pgxp_load_source(b.owner,owner_word)==scope.lifetime)
         b.lifetime = scope.lifetime;
     b.bone = bone; b.vertex = vertex;
     b.kind = scope.kind; b.vertex_count = count;
@@ -1108,7 +1127,7 @@ int command(const char* args, char* reply, int cap) {
         "{\"active\":%d,\"submissions\":%llu,\"batches\":%llu,\"rejected\":%llu,"
         "\"overflow\":%llu,\"last_submission\":%llu,\"last_skeletons\":%u,"
         "\"last_batches\":%u,\"last_rejected\":%u,\"last_overflow\":%u,"
-        "\"descriptor\":%u,\"asset\":%u,\"bone\":%u,"
+        "\"descriptor\":%u,\"owner\":%u,\"asset\":%u,\"bone\":%u,"
         "\"vertex\":%u,\"native_xy\":%u,\"local_xy\":%u,"
         "\"mapped_polygons\":%llu,\"partial_polygons\":%llu,\"unknown_polygons\":%llu,"
         "\"invalid_lists\":%llu,\"tag_failures\":%llu,\"last_packets\":%u,\"last_words\":%u,"
@@ -1128,7 +1147,7 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)overflows.load(), f ? (unsigned long long)f->serial : 0,
         f ? f->skeletons : 0, f ? unsigned(f->batches.size()) : 0,
         f ? f->rejected : 0, f ? f->overflow : 0,
-        b ? b->descriptor : 0, b ? b->asset : 0, b ? b->bone : 0, b ? b->vertex : 0,
+        b ? b->descriptor : 0, b ? b->owner : 0, b ? b->asset : 0, b ? b->bone : 0, b ? b->vertex : 0,
         b ? b->native_xy[0] : 0, b ? b->local[0] : 0,
         (unsigned long long)mapped.load(), (unsigned long long)partial.load(),
         (unsigned long long)unknown.load(), (unsigned long long)invalid_lists.load(),
