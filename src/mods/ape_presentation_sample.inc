@@ -52,6 +52,15 @@ const Batch* camera_reference(const Frame& frame) {
         if(batch.root_domain==1 && batch.lifetime && required.count(batch.source))return &batch;
     return nullptr;
 }
+bool inverse_linear(const double m[9],double out[9]) {
+    const double cof[9]={m[4]*m[8]-m[5]*m[7],m[2]*m[7]-m[1]*m[8],m[1]*m[5]-m[2]*m[4],
+        m[5]*m[6]-m[3]*m[8],m[0]*m[8]-m[2]*m[6],m[2]*m[3]-m[0]*m[5],
+        m[3]*m[7]-m[4]*m[6],m[1]*m[6]-m[0]*m[7],m[0]*m[4]-m[1]*m[3]};
+    const double det=m[0]*cof[0]+m[1]*cof[3]+m[2]*cof[6];
+    if(!std::isfinite(det) || det<=1e-12)return false;
+    for(unsigned i=0;i<9;++i){out[i]=cof[i]/det;if(!std::isfinite(out[i]))return false;}
+    return true;
+}
 bool frame_camera(const Batch& ref,PsxPresentationCamera& camera) {
     PsxPresentationPose world_to_view{};
     double lens[3],linear[9],translation[3];
@@ -59,21 +68,48 @@ bool frame_camera(const Batch& ref,PsxPresentationCamera& camera) {
     for(unsigned i=0;i<9;++i)
         linear[i]=double(int16_t(ref.camera[i/2]>>((i&1)*16)))/4096.0/lens[i/3];
     for(unsigned i=0;i<3;++i)translation[i]=int32_t(ref.camera[5+i])/lens[i];
-    // View rows are independently normalized camera basis axes. Removing
-    // their bounded Q12 length error must precede rigid TRS conversion;
-    // treating that row error as object-style column scale creates shear.
-    for(unsigned row=0;row<3;++row) {
-        const double length=std::hypot(std::hypot(linear[row*3],linear[row*3+1]),linear[row*3+2]);
-        if(!std::isfinite(length) || std::abs(length-1)>16.0/4096.0)return false;
-        for(unsigned col=0;col<3;++col)linear[row*3+col]/=length;
-        translation[row]/=length;
+    if(ref.authored_camera_valid) {
+        // Preserve the exact native optical centre and linear projection.
+        // Only orientation comes from the original authored look vector.
+        double inverse[9];if(!inverse_linear(linear,inverse))return false;
+        camera.pose=ref.authored_camera;
+        for(unsigned row=0;row<3;++row) {
+            double residual=translation[row];
+            for(unsigned col=0;col<3;++col)residual+=linear[row*3+col]*ref.authored_camera.position[col];
+            // Original rotate/translate and diagonal-lens composition each
+            // truncate once. This is their derived error bound, not a pose fit.
+            if(std::abs(residual)>1+1/lens[row]+1e-8)return false;
+            camera.pose.position[row]=0;
+            for(unsigned col=0;col<3;++col)camera.pose.position[row]-=inverse[row*3+col]*translation[col];
+        }
+        PsxPresentationPose basis=camera.pose;
+        for(double& value:basis.position)value=0;
+        for(unsigned col=0;col<3;++col) {
+            double unit[3]={},axis[3];unit[col]=1;
+            if(!psx_presentation_pose_point(&basis,unit,0,axis))return false;
+            for(unsigned row=0;row<3;++row) {
+                camera.view_linear[row*3+col]=0;
+                for(unsigned k=0;k<3;++k)camera.view_linear[row*3+col]+=linear[row*3+k]*axis[k];
+            }
+        }
+        camera.flags=PSX_PRESENTATION_CAMERA_VIEW_LINEAR;
+    } else {
+        // View rows are independently normalized camera basis axes. Removing
+        // their bounded Q12 length error must precede rigid TRS conversion;
+        // treating that row error as object-style column scale creates shear.
+        for(unsigned row=0;row<3;++row) {
+            const double length=std::hypot(std::hypot(linear[row*3],linear[row*3+1]),linear[row*3+2]);
+            if(!std::isfinite(length) || std::abs(length-1)>16.0/4096.0)return false;
+            for(unsigned col=0;col<3;++col)linear[row*3+col]/=length;
+            translation[row]/=length;
+        }
+        if(!psx_presentation_pose_from_matrix(&world_to_view,linear,translation,1))return false;
+        const double origin[3]={0,0,0};
+        if(!psx_presentation_pose_point(&world_to_view,origin,1,camera.pose.position))return false;
+        camera.pose.rotation[0]=world_to_view.rotation[0];
+        for(unsigned i=1;i<4;++i)camera.pose.rotation[i]=-world_to_view.rotation[i];
+        for(unsigned i=0;i<3;++i)camera.pose.scale[i]=1;
     }
-    if(!psx_presentation_pose_from_matrix(&world_to_view,linear,translation,1))return false;
-    const double origin[3]={0,0,0};
-    if(!psx_presentation_pose_point(&world_to_view,origin,1,camera.pose.position))return false;
-    camera.pose.rotation[0]=world_to_view.rotation[0];
-    for(unsigned i=1;i<4;++i)camera.pose.rotation[i]=-world_to_view.rotation[i];
-    for(unsigned i=0;i<3;++i)camera.pose.scale[i]=1;
     camera.focal_x=ref.presentation[0].focal_x*lens[0];
     camera.focal_y=ref.presentation[0].focal_y*lens[1];
     camera.center_x=ref.presentation[0].center_x;
@@ -107,7 +143,7 @@ VertexMap vertex_map(const Frame& f,const Batch& ref) {
     }
     return result;
 }
-bool source_object(const VertexRef& source,const PsxPresentationCamera& camera,
+bool source_object(const VertexRef& source,const PsxPresentationCamera& camera,const double inverse_view[9],
     uint64_t identity,PsxPresentationObject& object,PsxPresentationVertex vertices[3]) {
     if(source.ambiguous)return false;
     const Batch& b=*source.batch;const unsigned corner=source.corner;
@@ -131,7 +167,10 @@ bool source_object(const VertexRef& source,const PsxPresentationCamera& camera,
     }
     // Use the explicit camera and original world root. Local-space residuals
     // retain the original bone animation and fixed-point matrix roundoff.
-    if(!psx_presentation_pose_point(&camera.pose,view,0,world) ||
+    double calibrated[3]={};
+    for(unsigned row=0;row<3;++row)for(unsigned col=0;col<3;++col)
+        calibrated[row]+=inverse_view[row*3+col]*view[col];
+    if(!psx_presentation_pose_point(&camera.pose,calibrated,0,world) ||
         !psx_presentation_pose_point(&object.pose,world,1,local))return false;
     for(unsigned i=0;i<3;++i) {
         vertices[i]={};for(unsigned k=0;k<3;++k)vertices[i].position[k]=local[k];vertices[i].rgba=0xFFFFFFFFu;
@@ -173,6 +212,9 @@ bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha
     PsxPresentationCamera old_camera{},new_camera{};
     if(!frame_camera(*a,old_camera))return fail("old camera is not a qualified rigid transform");
     if(!frame_camera(*b,new_camera))return fail("new camera is not a qualified rigid transform");
+    double old_inverse[9]={1,0,0,0,1,0,0,0,1},new_inverse[9]={1,0,0,0,1,0,0,0,1};
+    if((old_camera.flags && !inverse_linear(old_camera.view_linear,old_inverse)) ||
+        (new_camera.flags && !inverse_linear(new_camera.view_linear,new_inverse)))return fail("singular camera view adjustment");
     const auto old_vertices=vertex_map(old_frame,*a),new_vertices=vertex_map(new_frame,*b);
     if(new_vertices.empty() || new_vertices.size()>24576)return fail("no bounded vertices in camera domain");
     const uint32_t cap=uint32_t(new_vertices.size());
@@ -188,12 +230,12 @@ bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha
     std::map<VertexKey,uint64_t> identities;uint64_t next=1;
     for(const auto& entry:new_vertices) {
         PsxPresentationObject object{};PsxPresentationVertex vertices[3];
-        if(!source_object(entry.second,new_camera,next,object,vertices))continue;
+        if(!source_object(entry.second,new_camera,new_inverse,next,object,vertices))continue;
         if(!psx_presentation_scene_append(new_scene.get(),&object))return fail("new source object ingestion failed");
         identities.emplace(entry.first,next++);
         const auto old=old_vertices.find(entry.first);
         if(old!=old_vertices.end() && !(object.flags&PSX_PRESENTATION_NATIVE) &&
-            source_object(old->second,old_camera,object.identity,object,vertices))
+            source_object(old->second,old_camera,old_inverse,object.identity,object,vertices))
             if(!psx_presentation_scene_append(old_scene.get(),&object))return fail("old source object ingestion failed");
     }
     if(identities.empty() || !psx_presentation_scene_seal(old_scene.get()) || !psx_presentation_scene_seal(new_scene.get()))return fail("no qualified sealed objects");

@@ -51,6 +51,8 @@ struct Batch {
     uint32_t native_xy[3], native_z[3], projection[3];
     GtePresentationProjection presentation[3]{};
     uint32_t presentation_valid=0;
+    PsxPresentationPose authored_camera{};
+    bool authored_camera_valid=false;
     uint32_t input[6], kind, source_vertex[3], vertex_count;
     uint64_t parents[2]; /* Subdivision: original edge sources, depth guard 164 */
     uint32_t edge_style; /* original raster-edge bias: 0 none, 1 forward, 2 reverse */
@@ -143,9 +145,12 @@ std::atomic<uint64_t> constructions{0}, lifetime_batches{0};
 struct CameraComposition {
     uint64_t witness=0;
     uint32_t pointer=0,world[8]{},view[8]{},camera[8]{};
+    PsxPresentationPose authored_pose{};
+    bool authored=false;
 };
 std::unordered_map<uint64_t,CameraComposition> pending_compositions;
 std::unordered_map<uint32_t,CameraComposition> camera_compositions;
+CameraComposition authored_camera_binding;
 uint64_t next_composition=1;
 std::atomic<uint64_t> composition_count{0},rigid_world_batches{0};
 std::atomic<uint64_t> world_root_batches{0};
@@ -175,7 +180,7 @@ void reset() {
     observed_cpu = nullptr;
     lifetimes.clear();
     projection_scopes.clear();
-    pending_compositions.clear();camera_compositions.clear();
+    pending_compositions.clear();camera_compositions.clear();authored_camera_binding={};
     if (writing) writing->clear(0);
     std::lock_guard<std::mutex> lock(published_mutex);
     prepared_geometry={};
@@ -255,9 +260,45 @@ uint64_t lifetime(uint32_t descriptor, uint32_t asset) {
 uint64_t projection_frame(const CPUState* cpu) {
     return uint64_t(cpu->gpr[29])<<32 | cpu->gpr[31];
 }
+bool authored_camera_pose(const CPUState* cpu,PsxPresentationPose& pose) {
+    // FUN80046670 retains the authored eye in s5 and its unmodified look
+    // vector at sp+10. Its final lens composition returns to80046888.
+    if(!ram(cpu->gpr[21],6,2) || !ram(cpu->gpr[29],28,4))return false;
+    double eye[3],direction[3];
+    for(unsigned i=0;i<3;++i) {
+        eye[i]=int16_t(psx_mod_read_half(cpu->gpr[21]+i*2));
+        direction[i]=int32_t(psx_mod_read_word(cpu->gpr[29]+16+i*4));
+        if(std::abs(direction[i])>65535)return false;
+    }
+    const double h=std::hypot(direction[0],direction[2]),length=std::hypot(h,direction[1]);
+    if(!h || !length)return false; // original zero-horizontal case substitutes z=4096
+    const double x=direction[0]/h,z=direction[2]/h,y=direction[1]/length,c=h/length;
+    double r[9]={z,0,-x,-x*y,c,-z*y,x*c,y,z*c};
+    const double angle=int16_t(cpu->gpr[22])*6.283185307179586476925286766559/4096.0;
+    const double cr=std::cos(angle),sr=std::sin(angle);
+    for(unsigned col=0;col<3;++col) {
+        const double a=r[col],b=r[3+col];r[col]=cr*a+sr*b;r[3+col]=-sr*a+cr*b;
+    }
+    const double zero[3]={};PsxPresentationPose inverse{};
+    if(!psx_presentation_pose_from_matrix(&inverse,r,zero,1))return false;
+    pose=inverse;pose.rotation[0]=inverse.rotation[0];
+    for(unsigned i=1;i<4;++i)pose.rotation[i]=-inverse.rotation[i];
+    for(unsigned i=0;i<3;++i)pose.position[i]=eye[i];
+    return true;
+}
 void camera_composition_before(CPUState* cpu,uint32_t) {
     const uint64_t frame=projection_frame(cpu);pending_compositions.erase(frame);
-    if(!open || (cpu->gpr[4]&0x1FFFFFFFu)!=0xE78C0u)return;
+    if(!open)return;
+    if(cpu->gpr[31]==0x80046888u && cpu->gpr[4]==0x800AF0A0u &&
+        cpu->gpr[5]==0x800E78C0u && cpu->gpr[6]==0x800E78C0u && cpu->gpr[19]==cpu->gpr[6]) {
+        CameraComposition op;op.pointer=cpu->gpr[6];op.authored=authored_camera_pose(cpu,op.authored_pose);
+        if(op.authored && pending_compositions.size()<256) {
+            read_words(cpu->gpr[4],op.camera,8); // exact lens used by this constructor
+            pending_compositions.emplace(frame,op);
+        }
+        return;
+    }
+    if((cpu->gpr[4]&0x1FFFFFFFu)!=0xE78C0u)return;
     if(!ram(cpu->gpr[5],32,4) || !ram(cpu->gpr[6],32,4)) {++writing->rejected;return;}
     if(pending_compositions.size()==256) {++writing->overflow;return;}
     CameraComposition op;op.pointer=cpu->gpr[6];
@@ -269,6 +310,13 @@ void camera_composition_after(CPUState* cpu,uint32_t) {
     if(!open || pending==pending_compositions.end())return;
     CameraComposition op=pending->second;pending_compositions.erase(pending);
     if(cpu->gpr[6]!=op.pointer) {++writing->rejected;return;}
+    if(op.authored) {
+        read_words(op.pointer,op.view,8);op.witness=(uint64_t(1)<<61)|next_composition++;
+        bool tagged=true;
+        for(unsigned i=0;i<8;++i)tagged=pgxp_tag_word_source(op.pointer+4*i,op.view[i],op.witness)!=0 && tagged;
+        if(tagged)authored_camera_binding=op;
+        return;
+    }
     const uint32_t key=op.pointer&0x1FFFFFFFu;
     if(camera_compositions.size()==4096 && !camera_compositions.count(key)) {++writing->overflow;return;}
     read_words(op.pointer,op.view,8);
@@ -520,9 +568,14 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
         for (unsigned i = 0; i < 3; ++i) b.root[5+i] = uint32_t(int32_t(scope.origin[i]));
     }
     read_words(0x800E78C0u, b.camera, 8);
-    // Original camera construction premultiplies by this authored projection
-    // matrix via 8002FF50. Its Y scale belongs to the lens, not camera rotation.
-    read_words(0x800AF0A0u, b.lens, 8);
+    // Original camera construction premultiplies by this authored lens.
+    read_words(0x800AF0A0u,b.lens,8);
+    bool authored=authored_camera_binding.authored &&
+        !std::memcmp(b.camera,authored_camera_binding.view,sizeof b.camera) &&
+        !std::memcmp(b.lens,authored_camera_binding.camera,sizeof b.lens);
+    for(unsigned i=0;i<8 && authored;++i)
+        authored=pgxp_load_source(0x800E78C0u+4*i,b.camera[i])==authored_camera_binding.witness;
+    if(authored) {b.authored_camera=authored_camera_binding.authored_pose;b.authored_camera_valid=true;}
     if (scope.kind==TypedWorld) {
         std::memcpy(b.world_root,b.root,sizeof b.root);b.root_domain=2;
     } else {
@@ -1112,10 +1165,10 @@ int command(const char* args, char* reply, int cap) {
         if(!end || *end || !pair_gpu_new) {std::snprintf(reply,size_t(cap),"{}");return 0;}
         for(const auto& b:pair_gpu_new->batches)if(b.source==(token&~uint64_t(3))) {
             std::snprintf(reply,size_t(cap),"{\"source\":%llu,\"kind\":%u,\"descriptor\":%u,\"owner\":%u,\"asset\":%u,"
-                "\"lifetime\":%llu,\"vertex\":%u,\"count\":%u,\"source_vertex\":[%u,%u,%u],\"parents\":[%llu,%llu],"
+                "\"lifetime\":%llu,\"camera_authored\":%s,\"vertex\":%u,\"count\":%u,\"source_vertex\":[%u,%u,%u],\"parents\":[%llu,%llu],"
                 "\"input\":[%u,%u,%u,%u,%u,%u],\"matrix\":[%u,%u,%u,%u,%u,%u,%u,%u],\"root\":[%u,%u,%u,%u,%u,%u,%u,%u]}",
                 (unsigned long long)b.source,unsigned(b.kind),b.descriptor,b.owner,b.asset,(unsigned long long)b.lifetime,
-                b.vertex,b.vertex_count,b.source_vertex[0],b.source_vertex[1],b.source_vertex[2],
+                b.authored_camera_valid?"true":"false",b.vertex,b.vertex_count,b.source_vertex[0],b.source_vertex[1],b.source_vertex[2],
                 (unsigned long long)b.parents[0],(unsigned long long)b.parents[1],
                 b.input[0],b.input[1],b.input[2],b.input[3],b.input[4],b.input[5],
                 b.matrix[0],b.matrix[1],b.matrix[2],b.matrix[3],b.matrix[4],b.matrix[5],b.matrix[6],b.matrix[7],

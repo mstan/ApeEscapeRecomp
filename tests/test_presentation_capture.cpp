@@ -549,6 +549,79 @@ int main() {
     call(0x800161C4,cpu);assert(sources[d]==restored_lifetime);
     // A same-value untracked overwrite within the epoch must still fail closed.
     sources.erase(d);word(d,asset);call(0x800161C4,cpu);assert(!sources[d]);
+    // Native look-at normalization can produce a non-unit camera matrix.
+    // Bind its authored input at the existing lens-composer seam, keep a
+    // proper rotation, and preserve native projection at the exact endpoint.
+    {
+        activation();cpu={};fake_gpu=true;report("gpu on");
+        word(asset+4,3u<<16);word(d,asset);word(d+12,v);
+        cpu.gpr[4]=d;cpu.gpr[5]=asset;call(0x80015B34u,cpu);
+        const uint32_t stack=0x80008000u,eye=0x80009000u;
+        word(eye,100);word(eye+4,uint16_t(-500));
+        word(stack+16,uint32_t(-1124));word(stack+20,870);word(stack+24,3867);
+        for(unsigned i=0;i<8;++i)word(0x800AF0A0u+i*4,lens[i]);
+        cpu.gpr[29]=stack;cpu.gpr[31]=0x80046888u;
+        cpu.gpr[4]=0x800AF0A0u;cpu.gpr[5]=cpu.gpr[6]=cpu.gpr[19]=0x800E78C0u;
+        cpu.gpr[21]=eye;cpu.gpr[22]=0;call(0x8002FF50u,cpu);
+        const int16_t approximate[10]={3953,0,1148,180,2973,-624,-1124,870,3867,0};
+        uint32_t cam_words[8]={};
+        for(unsigned i=0;i<5;++i)cam_words[i]=uint16_t(approximate[i*2])|uint32_t(uint16_t(approximate[i*2+1]))<<16;
+        const double eye_position[3]={100,0,-500};
+        for(unsigned row=0;row<3;++row) {
+            double t=0;for(unsigned col=0;col<3;++col)t-=approximate[row*3+col]*eye_position[col]/4096.;
+            cam_words[5+row]=uint32_t(int32_t(std::floor(t)));
+        }
+        for(unsigned i=0;i<8;++i)word(0x800E78C0u+i*4,cam_words[i]);
+        call(0x800300A4u,cpu);assert(sources[0x800E78C0u]&(uint64_t(1)<<61));
+        double endpoint[2]={};
+        for(unsigned frame=0;frame<2;++frame) {
+            fake_env_y=int(frame)*256;
+            uint32_t root[8]={4096,0,4096,0,4096,frame*20,0,500};
+            for(unsigned i=0;i<8;++i)word(m+i*4,root[i]);
+            cpu.gpr[31]=0;cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=cpu.gpr[6]=m;call(0x8002FF50u,cpu);
+            uint32_t combined[8];std::copy(cam_words,cam_words+8,combined);
+            for(unsigned row=0;row<3;++row) {
+                double t=int32_t(cam_words[5+row]);
+                for(unsigned col=0;col<3;++col)t+=approximate[row*3+col]*int32_t(root[5+col])/4096.;
+                combined[5+row]=uint32_t(int32_t(std::floor(t)));
+            }
+            for(unsigned i=0;i<8;++i){word(m+i*4,combined[i]);cpu.gte_ctrl[i]=combined[i];}
+            call(0x800300A4u,cpu);
+            for(unsigned i=0;i<3;++i) {
+                cpu.gte_data[i*2]=uint16_t(points[i][0])|uint32_t(uint16_t(points[i][1]))<<16;
+                cpu.gte_data[i*2+1]=0;word(v+i*8,cpu.gte_data[i*2]);word(v+i*8+4,0);
+                double projected[3];
+                for(unsigned row=0;row<3;++row){projected[row]=int32_t(combined[5+row]);
+                    for(unsigned col=0;col<3;++col)projected[row]+=approximate[row*3+col]*points[i][col]/4096.;}
+                const double sx=100+100*projected[0]/projected[2],sy=100+100*projected[1]/projected[2];
+                cpu.gte_data[12+i]=uint16_t(int(sx))|uint32_t(uint16_t(int(sy)))<<16;
+                cpu.gte_data[17+i]=uint32_t(projected[2]);
+                if(!i){endpoint[0]=sx+5;endpoint[1]=sy+7+fake_env_y;}
+            }
+            cpu.gte_ctrl[24]=cpu.gte_ctrl[25]=100u<<16;cpu.gte_ctrl[26]=100;
+            cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4u,cpu);
+            cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;call(0x80016260u,cpu);call(0x8001628Cu,cpu);
+            word(ot,0x04FFFFFFu);word(ot+4,0x20808080u);
+            for(unsigned i=0;i<3;++i){word(ot+8+i*4,cpu.gte_data[12+i]);sources[ot+8+i*4]=gte_source[i];}
+            cpu.gpr[4]=ot;call(0x80028CD0u,cpu);
+        }
+        report("gpu pair-adjacent");report("gpu interpolate 1 unused.png");
+        assert(rendered_triangles.size()==1);
+        assert(std::abs(rendered_triangles[0].vertices[0].x-endpoint[0])<1e-8);
+        assert(std::abs(rendered_triangles[0].vertices[0].y-endpoint[1])<1e-8);
+        report("gpu interpolate 0.5 unused.png");
+        assert(report(("gpu source "+std::to_string(gte_source[0])).c_str()).find("\"camera_authored\":true")!=std::string::npos);
+        const uint64_t camera_witness=sources.at(0x800E78C0u);
+        for(unsigned i=0;i<8;++i)assert(sources.at(0x800E78C0u+i*4)==camera_witness);
+        // A same-value write to any camera word cuts its constructor binding.
+        sources.erase(0x800E78C4u);word(0x800E78C4u,cam_words[1]);
+        cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4u,cpu);
+        cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;call(0x80016260u,cpu);call(0x8001628Cu,cpu);
+        for(unsigned i=0;i<3;++i)sources[ot+8+i*4]=gte_source[i];
+        cpu.gpr[4]=ot;call(0x80028CD0u,cpu);report("gpu pair-adjacent");
+        assert(report(("gpu source "+std::to_string(gte_source[0])).c_str()).find("\"camera_authored\":false")!=std::string::npos);
+        char rejected_camera[1024];assert(!query("gpu interpolate 0.5 unused.png",rejected_camera,sizeof rejected_camera));
+    }
     // Mailboxes share one template, but the original caller owns separate
     // placement records. Identical local vertices must retain distinct lives.
     activation();cpu={};
