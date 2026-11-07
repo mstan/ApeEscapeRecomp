@@ -4,10 +4,13 @@
 #include "gpu.h"
 #include "presentation_gpu.h"
 #include "gpu_gl_renderer.h"
+#include "gte_presentation.h"
+#include "gpu_render.h"
 
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <map>
 #include <tuple>
 #include <cstdio>
@@ -20,6 +23,7 @@
 #include <vector>
 
 #if defined(PSX_MOD_DEVELOPER_CHANNEL) && PSX_MOD_DEVELOPER_CHANNEL
+extern "C" int gte_geometry_correction_enabled(void);
 
 /* SCUS-94423 original-code seams, verified against the boot EXE:
  * 80016A74: skeletal projector's descriptor read; a0 is the descriptor.
@@ -30,7 +34,8 @@
  * The captured data is host-only. No guest instructions are replayed and no
  * guest CPU, RAM, GTE, timing, visibility or packet output is changed.
  * Descriptor addresses are provenance, not yet qualified lifetime identities.
- * This development-only producer does not enable presentation interpolation. */
+ * This development-only producer leaves live presentation disabled until an
+ * explicit request enables it. */
 namespace {
 constexpr const char* Plugin = "ape.presentation.capture";
 constexpr size_t MaxBatches = 8192;
@@ -43,6 +48,8 @@ struct Batch {
     uint32_t local[6], matrix[8], root[8], camera[8], lens[8];
     uint32_t world_root[8], root_domain; // 0 unknown, 1 original pre-camera, 2 authored typed-world
     uint32_t native_xy[3], native_z[3], projection[3];
+    GtePresentationProjection presentation[3]{};
+    uint32_t presentation_valid=0;
     uint32_t input[6], kind, source_vertex[3], vertex_count;
     uint64_t parents[2]; /* Subdivision: original edge sources, depth guard 164 */
     uint32_t edge_style; /* original raster-edge bias: 0 none, 1 forward, 2 reverse */
@@ -50,10 +57,14 @@ struct Batch {
 struct Packet {
     uint32_t address, first, words;
     uint64_t source[4]{};
+    int32_t ui_x[4]{},ui_y[4]{};
+    bool ui=false;
+    double q[4]{},fraction_x[4]{},fraction_y[4]{};
 };
 struct Frame {
     uint64_t serial = 0;
     uint64_t epoch = 1;
+    uint32_t phase=0;
     uint32_t skeletons = 0, rejected = 0, overflow = 0;
     std::vector<Batch> batches;
     std::vector<uint32_t> commands;
@@ -62,13 +73,15 @@ struct Frame {
     uint32_t projected = 0;
     uint64_t texture_version = 0;
     GpuDrawingEnvironment environment{};
+    uint8_t filter=0;
+    bool perspective=false,geometry=false;
     Frame() {
         batches.reserve(MaxBatches); commands.reserve(MaxWords);
         packets.reserve(MaxNodes);
     }
     void clear(uint64_t id) {
         if(texture_version)psx_presentation_gpu_release(texture_version);
-        texture_version=0;environment={};
+        texture_version=0;environment={};filter=0;perspective=geometry=false;
         serial = id; skeletons = rejected = overflow = 0; batches.clear();
         commands.clear(); packets.clear(); mapped = partial = unknown = invalid_list = 0;
         projected = 0;
@@ -104,9 +117,22 @@ uint32_t scope_event = 0;
 std::unordered_map<uint64_t,Scope> projection_scopes;
 std::atomic<bool> active{false};
 bool gpu_capture = false;
+std::atomic<bool> live_enabled{false};
+std::atomic<uint64_t> live_frames{0},live_misses{0},live_cpu_ns{0},live_max_ns{0};
+std::atomic<uint64_t> live_prepared{0};
+std::atomic<uint64_t> live_reasons[6]{};
+std::atomic<const char*> live_failure{""};
+bool reported_live_scene=false;
+std::atomic<uint64_t> gpu_dropped{0},gpu_dropped_serial{0};
+struct PreparedGeometry {
+    uint64_t output_version=0;
+    uint64_t source_serial=0;
+    GpuDrawArea front{},back{};
+} prepared_geometry;
+void prepare_live(); // caller owns published_mutex and the GL context
 CPUState* observed_cpu = nullptr;
 uint64_t serial = 0;
-uint64_t source_epoch = 1;
+std::atomic<uint64_t> source_epoch{1};
 uint64_t next_source = 4;
 uint64_t next_lifetime = 1;
 struct Lifetime { uint64_t token; uint32_t asset, constructor; };
@@ -142,24 +168,34 @@ void read_words(uint32_t address, uint32_t* out, unsigned count) {
 void reset() {
     scope = {}; scope_event = 0; open = active.load(); serial = 0;
     ++source_epoch;
+    psx_presentation_gpu_acquire();
+    gpu_dropped_serial=0;
     observed_cpu = nullptr;
     lifetimes.clear();
     projection_scopes.clear();
     pending_compositions.clear();camera_compositions.clear();
     if (writing) writing->clear(0);
     std::lock_guard<std::mutex> lock(published_mutex);
+    prepared_geometry={};
     held_gpu_frame.reset();
     pair_gpu_old.reset();pair_gpu_new.reset();
     if (published) published->clear(0);
     if(previous_gpu_frame)previous_gpu_frame->clear(0);
     if (source_records) for (size_t i = 0; i < MaxBatches; ++i) source_records[i] = {};
     pgxp_invalidate_all();
+    gte_presentation_capture(active.load());
 }
 void deactivate() {
-    active = false; gpu_capture=false; reset(); pgxp_set_source_tracking(0);
+    live_enabled=false;active = false; gpu_capture=false; reset(); pgxp_set_source_tracking(0);
 }
 void activate() {
     active = false; open = false;
+    psx_presentation_gpu_acquire();
+    live_enabled=false;live_frames=live_misses=live_cpu_ns=live_max_ns=0;
+    live_prepared=0;
+    reported_live_scene=false;
+    gpu_dropped=0;
+    for(auto& reason:live_reasons)reason=0;
     writing = std::make_unique<Frame>();
     source_records = std::make_unique<SourceRecord[]>(MaxBatches);
     {
@@ -199,7 +235,18 @@ void constructed(CPUState* cpu, uint32_t pc) {
     lifetimes[key] = {token,asset,pc}; ++constructions;
 }
 uint64_t lifetime(uint32_t descriptor, uint32_t asset) {
-    const auto entry=lifetimes.find(descriptor & 0x1FFFFFFFu);
+    const uint32_t key=descriptor & 0x1FFFFFFFu;
+    auto entry=lifetimes.find(key);
+    if(entry==lifetimes.end()) {
+        // Activation/restore starts an empty epoch. An already live descriptor
+        // may predate capture, so establish continuity at its first observed
+        // projector read. Every later header write still invalidates this tag;
+        // an existing invalid entry can only be renewed by a constructor.
+        if(lifetimes.size()==4096) {++writing->overflow;return 0;}
+        const uint64_t token=(uint64_t(1)<<63)|next_lifetime++;
+        if(!pgxp_tag_word_source(descriptor,asset,token)) {++tag_failures;return 0;}
+        entry=lifetimes.emplace(key,Lifetime{token,asset,0}).first;
+    }
     return entry!=lifetimes.end() && entry->second.asset==asset &&
         pgxp_load_source(descriptor,asset)==entry->second.token ? entry->second.token : 0;
 }
@@ -297,6 +344,14 @@ void capture_list(uint32_t head) {
                             const uint64_t token = pgxp_load_source(p.address + 4 * offset,
                                 writing->commands[p.first + offset]);
                             if (retain_source(token)) { p.source[i] = token; ++valid; }
+                            const uint32_t word=writing->commands[p.first+offset];
+                            const int x=(int(word&2047)^1024)-1024,y=(int((word>>16)&2047)^1024)-1024;
+                            int32_t px=0,py=0;uint16_t depth=0;
+                            if(writing->geometry && pgxp_get_precise_vertex(p.address+4*offset,word,x,y,&px,&py,&depth)!=PGXP_SRC_NATIVE) {
+                                p.fraction_x[i]=px/65536.0-x;p.fraction_y[i]=py/65536.0-y;
+                            }
+                            if(writing->perspective && pgxp_load_precise_word(p.address+4*offset,word,&px,&py,&depth) && depth)
+                                p.q[i]=1.0/depth;
                         }
                     }
                     if (valid == n) ++writing->mapped;
@@ -310,23 +365,75 @@ void capture_list(uint32_t head) {
         address = link & 0xFFFFFFu;
     }
 }
+void gpu_frame_ready(void* data,uint64_t version) {
+    std::unique_ptr<Frame> frame(static_cast<Frame*>(data));frame->texture_version=version;
+    if(frame->epoch!=source_epoch.load())return;
+    {
+        std::lock_guard<std::mutex> lock(published_mutex);
+        previous_gpu_frame=std::move(published);published=std::move(frame);
+    }
+    // GPU ownership serializes preparation with presents. Immutable frames
+    // can be inspected without holding the emulation-side publication lock.
+    if(live_enabled)prepare_live();
+}
+void capture_ui(Frame& frame) {
+    int offset_x=frame.environment.area.offset_x,offset_y=frame.environment.area.offset_y;
+    for(auto& packet:frame.packets) {
+        const auto* w=frame.commands.data()+packet.first;const unsigned op=w[0]>>24;
+        if(op==0xE5) {
+            offset_x=(int(w[0]&2047)^1024)-1024;
+            offset_y=(int((w[0]>>11)&2047)^1024)-1024;continue;
+        }
+        unsigned n=0;bool rectangle=false;
+        if((op&0xE0u)==0x20u) {
+            n=(op&8)?4:3;const unsigned stride=1+unsigned((op&4)!=0)+unsigned((op&16)!=0);
+            for(unsigned i=0;i<n;++i) {
+                packet.ui_x[i]=(int(w[1+i*stride]&2047)^1024)-1024;
+                packet.ui_y[i]=(int((w[1+i*stride]>>16)&2047)^1024)-1024;
+            }
+        } else if((op&0xE0u)==0x60u) {
+            rectangle=true;n=4;const bool texture=(op&4)!=0;const unsigned size=(op>>3)&3;
+            const unsigned fixed[4]={0,1,8,16};const uint32_t wh=size?0:w[texture?3:2];
+            const unsigned width=size?fixed[size]:(texture?(wh&1023):std::min(wh&65535u,1023u));
+            const unsigned height=size?fixed[size]:(texture?((wh>>16)&511):std::min(wh>>16,511u));
+            if(!width || !height)continue;
+            const int x=(int(w[1]&2047)^1024)-1024,y=(int((w[1]>>16)&2047)^1024)-1024;
+            for(unsigned i=0;i<n;++i) {packet.ui_x[i]=x+((i&1)?width:0);packet.ui_y[i]=y+((i&2)?height:0);}
+        }
+        if(n)packet.ui=gpu_ws_copy_presented_ui(packet.address,w,packet.words,packet.ui_x,packet.ui_y,n,rectangle)!=0;
+        if(packet.ui)for(unsigned i=0;i<n;++i) {packet.ui_x[i]+=offset_x;packet.ui_y[i]+=offset_y;}
+    }
+}
 void finish(CPUState* cpu, uint32_t) {
     if (!open) return;
     observed_cpu=cpu;
     open = false; scope = {}; scope_event = 0x80028CD0u;
-    capture_list(cpu->gpr[4]);
-    writing->epoch=source_epoch;
-    if(gpu_capture && !writing->invalid_list && !writing->overflow && !writing->rejected) {
-        gpu_get_drawing_environment(&writing->environment);
-        writing->texture_version=psx_presentation_gpu_snapshot();
+    if(gpu_capture) {
+        gpu_get_drawing_environment(&writing->environment);writing->filter=uint8_t(gr_texture_filter());
+        writing->perspective=gpu_texture_correction_enabled()!=0;
+        writing->geometry=gte_geometry_correction_enabled()!=0;
+        // Reuse the ordinary host UI prepass so copied presentation commands
+        // own the same widget placement. This never executes guest drawing.
+        gpu_ws_prepass_linked_list(cpu->gpr[4]);
     }
+    capture_list(cpu->gpr[4]);
+    if(gpu_capture)capture_ui(*writing);
+    writing->epoch=source_epoch;
+    writing->phase=psx_mod_read_word(0x800F447Cu)&255;
     batches += writing->projected; rejected += writing->rejected;
     overflows += writing->overflow; ++submissions;
     mapped += writing->mapped; partial += writing->partial;
     unknown += writing->unknown; invalid_lists += writing->invalid_list;
+    if(gpu_capture) {
+        Frame* completed=writing.release();writing=std::make_unique<Frame>();
+        writing->clear(++serial);open=true;
+        if(!psx_presentation_gpu_snapshot_async(gpu_frame_ready,completed)) {
+            gpu_dropped_serial=completed->serial+1;++gpu_dropped;delete completed;
+        }
+        return;
+    }
     std::lock_guard<std::mutex> lock(published_mutex);
     writing.swap(published);
-    if(gpu_capture)writing.swap(previous_gpu_frame);
     writing->clear(++serial); open = true;
 }
 void enter(CPUState* cpu, uint32_t pc) {
@@ -377,6 +484,8 @@ bool capture(CPUState* cpu, uint32_t bone, uint32_t vertex, uint32_t local,
             ++writing->rejected; return false;
         }
         b.native_xy[i] = cpu->gte_data[12+fifo+i]; b.native_z[i] = cpu->gte_data[17+fifo+i];
+        if(gte_presentation_projection(fifo+i,b.native_xy[i],b.native_z[i],&b.presentation[i]))
+            b.presentation_valid|=1u<<i;
     }
     for (unsigned i = 0; i < 3; ++i) b.projection[i] = cpu->gte_ctrl[24+i];
     for (unsigned i = 0; i < 8; ++i) b.matrix[i] = cpu->gte_ctrl[i];
@@ -624,17 +733,49 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     next_source+=4;++subdivision_vertices;
 }
 #include "ape_presentation_sample.inc"
-int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,const GeometrySamples* geometry=nullptr) {
-    if(!f.texture_version) { std::snprintf(reply,size_t(cap),"{\"error\":\"no GPU snapshot\"}");return 0; }
+struct GeometryDraws {
     std::vector<PsxPresentationTriangle> triangles;
     std::vector<PsxPresentationMaterial> materials;
+    uint32_t skipped=0,sampled_triangles=0;
+    uint32_t resource_copies=0;
+    uint8_t skipped_ops[8]{};
+    const char* error="";
+};
+bool build_geometry_draws(const Frame& f,const GeometrySamples* geometry,GeometryDraws& draws) {
+    if(!f.texture_version) {draws.error="no GPU snapshot";return false;}
+    auto& triangles=draws.triangles;auto& materials=draws.materials;
+    struct ResourceWrite {int x,y,w,h;};
+    std::vector<ResourceWrite> resource_writes;
+    const auto overlaps=[](const ResourceWrite& a,const ResourceWrite& b) {
+        return a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
+    };
+    const auto valid_texture_reads=[&](const PsxPresentationMaterial& m) {
+        if(!(m.flags&PSX_PRESENTATION_TEXTURED))return true;
+        const unsigned mode=(m.texpage>>7)&3;
+        const unsigned shift=mode<2 ? 2-mode : 0;
+        unsigned u0=0,u1=255,v0=0,v1=255;
+        // The ordinary shader clamps every no-window fetch, including filter
+        // footprints, to the authored UV bounds. A different atlas region in
+        // the same page is not a read dependency of this primitive.
+        if(!(m.texture_window&1023u)) {
+            u0=m.uv_limits[0];u1=m.uv_limits[2];v0=m.uv_limits[1];v1=m.uv_limits[3];
+        }
+        ResourceWrite page={int((m.texpage&15)*64+(u0>>shift)),int(((m.texpage>>4)&1)*256+v0),
+            int((u1>>shift)-(u0>>shift)+1),int(v1-v0+1)};
+        ResourceWrite clut={int(m.clut_x),int(m.clut_y),mode?256:16,1};
+        if(page.x+page.w>1024) {page.x=0;page.w=1024;}
+        if(page.y+page.h>512) {page.y=0;page.h=512;}
+        if(clut.x+clut.w>1024) {clut.x=0;clut.w=1024;}
+        for(const auto& write:resource_writes)
+            if(overlaps(write,page) || (mode<2 && overlaps(write,clut)))return false;
+        return true;
+    };
     triangles.reserve(f.packets.size()*2);materials.reserve(f.packets.size());
     GpuDrawingEnvironment env=f.environment;
     const float color5=gl_renderer_accurate_blending()?8.0f/255.0f:1.0f/31.0f;
-    uint32_t skipped=0;
-    uint32_t sampled_triangles=0;
+    auto& skipped=draws.skipped;auto& sampled_triangles=draws.sampled_triangles;
     std::unique_ptr<PsxPresentationDraw,decltype(&psx_presentation_draw_destroy)> clipped(psx_presentation_draw_create(3,6),psx_presentation_draw_destroy);
-    if(geometry && !clipped) {std::snprintf(reply,size_t(cap),"{\"error\":\"geometry workspace unavailable\"}");return 0;}
+    if(geometry && !clipped) {draws.error="geometry workspace unavailable";return false;}
     for(const Packet& p:f.packets) {
         const uint32_t* w=f.commands.data()+p.first;const unsigned op=w[0]>>24;
         switch(op) {
@@ -647,6 +788,19 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
         case 0xE6:env.mode=(env.mode&~0x1800u)|((w[0]&3u)<<11);continue;
         default:break;
         }
+        if((op&0xE0u)==0x80u) {
+            const ResourceWrite destination={int(w[2]&1023),int((w[2]>>16)&511),
+                int(((w[3]-1)&1023)+1),int((((w[3]>>16)-1)&511)+1)};
+            const auto& area=f.environment.area;
+            const ResourceWrite display={int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1)};
+            if(destination.x+destination.w>1024 || destination.y+destination.h>512 || overlaps(destination,display)) {
+                draws.error="visible or wrapped VRAM copy needs its own presentation source";return false;
+            }
+            // Native execution performs the resource update. It is irrelevant
+            // to this image only if no later draw reads the written texture or
+            // CLUT. The next immutable snapshot owns the native updated data.
+            resource_writes.push_back(destination);++draws.resource_copies;continue;
+        }
         if((op&0xE0u)==0x60u) {
             const bool texture=(op&4)!=0;const unsigned size=(op>>3)&3;
             const unsigned fixed[4]={0,1,8,16};
@@ -656,6 +810,7 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
             if(!width || !height)continue;
             PsxPresentationMaterial m{};m.texture_version=f.texture_version;m.texture_window=env.texture_window;
             m.texpage=uint16_t(env.mode&511);m.semi=(op&2)?int16_t((env.mode>>5)&3):-1;
+            m.filter=f.filter;
             m.clip[0]=int16_t(env.area.left);m.clip[1]=int16_t(env.area.top);
             m.clip[2]=int16_t(env.area.right);m.clip[3]=int16_t(env.area.bottom);
             if(env.mode&(1u<<11))m.flags|=PSX_PRESENTATION_MASK_SET;
@@ -672,12 +827,13 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
             const int y=((int((w[1]>>16)&2047)^1024)-1024)+env.area.offset_y;
             PsxPresentationDrawVertex vertices[4]{};
             for(unsigned j=0;j<4;++j) {
-                vertices[j].x=x+((j&1)?width:0);vertices[j].y=y+((j&2)?height:0);
+                vertices[j].x=p.ui?p.ui_x[j]:x+((j&1)?width:0);vertices[j].y=p.ui?p.ui_y[j]:y+((j&2)?height:0);
                 vertices[j].uv[0]=float(u+((j&1)?width:0));vertices[j].uv[1]=float(vv+((j&2)?height:0));
                 for(unsigned k=0;k<3;++k)vertices[j].color[k]=texture?float((w[0]>>(k*8))&255)/255.0f:
                     float((w[0]>>(k*8+3))&31)*color5;
                 vertices[j].color[3]=1;
             }
+            if(!valid_texture_reads(m)) {draws.error="in-frame texture feedback needs a later resource version";return false;}
             const uint32_t resource=uint32_t(materials.size());materials.push_back(m);
             const unsigned indices[2][3]={{0,1,2},{1,2,3}};
             for(unsigned j=0;j<2;++j) {
@@ -687,11 +843,12 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
             }
             continue;
         }
-        if((op&0xE0u)!=0x20u) { if(op!=0 && op!=1)++skipped;continue; }
+        if((op&0xE0u)!=0x20u) { if(op!=0 && op!=1) {if(skipped<8)draws.skipped_ops[skipped]=uint8_t(op);++skipped;}continue; }
         const bool texture=(op&4)!=0,shaded=(op&16)!=0;
         const unsigned n=(op&8)?4:3,stride=1+unsigned(texture)+unsigned(shaded);
         if(p.words!=n*stride+unsigned(!shaded)) { ++skipped;continue; }
         PsxPresentationMaterial material{};material.texture_version=f.texture_version;
+        material.filter=f.filter;
         material.texture_window=env.texture_window;
         if(texture) {
             material.texpage=uint16_t(w[2+stride]>>16);
@@ -712,6 +869,8 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
             const uint32_t xy=w[1+j*stride];
             v[j].x=((int32_t(xy&2047)^1024)-1024)+env.area.offset_x;
             v[j].y=((int32_t((xy>>16)&2047)^1024)-1024)+env.area.offset_y;
+            if(p.ui) {v[j].x=p.ui_x[j];v[j].y=p.ui_y[j];}
+            v[j].x+=p.fraction_x[j];v[j].y+=p.fraction_y[j];v[j].reciprocal_z=p.q[j];
             const uint32_t color=shaded?w[j*stride]:w[0];
             for(unsigned k=0;k<3;++k)v[j].color[k]=texture?float((color>>(k*8))&255)/255.0f:
                 float((color>>(k*8+3))&31)*color5;
@@ -724,18 +883,21 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
                 }
             }
         }
+        if(!valid_texture_reads(material)) {draws.error="in-frame texture feedback needs a later resource version";return false;}
         const uint32_t resource=uint32_t(materials.size());materials.push_back(material);
         const unsigned indices[2][3]={{0,1,2},{1,2,3}};
         for(unsigned j=0;j<(n==4?2u:1u);++j) {
             PsxPresentationTriangle t{};t.identity=p.address;t.resource=resource;t.flags=PSX_PRESENTATION_AFFINE_UV;
             for(unsigned k=0;k<3;++k)t.vertices[k]=v[indices[j][k]];
-            PsxPresentationSample sampled[3]{};bool qualified=geometry && clipped;
+            if(texture && f.perspective && t.vertices[0].reciprocal_z>0 &&
+                t.vertices[1].reciprocal_z>0 && t.vertices[2].reciprocal_z>0)t.flags=0;
+            PsxPresentationSample sampled[3]{};bool qualified=geometry && clipped && !p.ui;
             for(unsigned k=0;k<3 && qualified;++k) {
                 const unsigned vertex=indices[j][k];
                 const auto point=geometry->vertices.find(p.source[vertex]);
                 if(point==geometry->vertices.end()) {qualified=false;break;}
                 sampled[k]=point->second;sampled[k].identity=uint64_t(p.address)+1;
-                sampled[k].resource=resource;sampled[k].flags=PSX_PRESENTATION_AFFINE_UV;
+                sampled[k].resource=resource;sampled[k].flags=t.flags;
                 sampled[k].rgba=0;
                 for(unsigned component=0;component<4;++component)
                     sampled[k].rgba|=uint32_t(std::lround(std::max(0.0f,std::min(1.0f,v[vertex].color[component]))*255.0f))<<(component*8);
@@ -745,7 +907,7 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
                 auto camera=geometry->camera;camera.center_x+=env.area.offset_x;camera.center_y+=env.area.offset_y;
                 const PsxPresentationViewport viewport={double(material.clip[0]),double(material.clip[1]),double(material.clip[2])+1,double(material.clip[3])+1};
                 if(!psx_presentation_draw_samples(clipped.get(),sampled,3,&camera,&viewport)) {
-                    std::snprintf(reply,size_t(cap),"{\"error\":\"invalid sampled geometry\"}");return 0;
+                    draws.error="invalid sampled geometry";return false;
                 }
                 uint32_t count=0;const auto* output=psx_presentation_draw_triangles(clipped.get(),&count);
                 triangles.insert(triangles.end(),output,output+count);++sampled_triangles;continue;
@@ -753,6 +915,66 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
             triangles.push_back(t);
         }
     }
+    if(skipped) {draws.error="unsupported native command requires whole-image fallback";return false;}
+    return true;
+}
+void prepare_live() {
+    prepared_geometry={};
+    const Frame* old=previous_gpu_frame.get(),*now=published.get();
+    if(!old || !now || !old->texture_version || !now->texture_version ||
+        old->serial+1!=now->serial || old->epoch!=now->epoch || now->serial+1<=gpu_dropped_serial.load() ||
+        old->rejected || old->overflow || old->invalid_list || now->rejected || now->overflow || now->invalid_list) {
+        live_failure="pair";++live_reasons[1];return;
+    }
+    if(old->phase!=3 || now->phase!=3) {live_failure="phase";return;}
+    const auto& a=old->environment.area;const auto& b=now->environment.area;
+    if((a.left==b.left && a.top==b.top) || a.right-a.left!=b.right-b.left || a.bottom-a.top!=b.bottom-b.top) {
+        live_failure="display binding";++live_reasons[2];return;
+    }
+    const auto start=std::chrono::steady_clock::now();
+    GeometrySamples samples;GeometryDraws draws;
+    if(!geometry_samples(*old,*now,.5,samples) || !samples.paired) {
+        live_failure=samples.error;++live_reasons[3];
+        if(!reported_live_scene) {
+            reported_live_scene=true;
+            std::fprintf(stderr,"Ape presentation source %llu/%llu: %s; camera old/new/lens",
+                (unsigned long long)old->serial,(unsigned long long)now->serial,samples.error);
+            for(const auto* matrix:{samples.old_camera_linear,samples.camera_linear,samples.lens_linear}) {
+                std::fputs(" [",stderr);for(unsigned i=0;i<9;++i)std::fprintf(stderr,"%s%d",i?",":"",int(matrix[i]));std::fputs("]",stderr);
+            }
+            std::fputc('\n',stderr);
+        }
+        return;
+    }
+    if(!build_geometry_draws(*now,&samples,draws) || !draws.sampled_triangles) {
+        live_failure=draws.error;++live_reasons[4];return;
+    }
+    if(!psx_presentation_gpu_render(draws.triangles.data(),uint32_t(draws.triangles.size()),
+        draws.materials.data(),uint32_t(draws.materials.size()))) {live_failure="GPU render";++live_reasons[5];return;}
+    const auto elapsed=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now()-start).count());
+    live_cpu_ns+=elapsed;if(elapsed>live_max_ns.load())live_max_ns=elapsed;
+    ++live_prepared;live_failure="";
+    prepared_geometry.front=a;prepared_geometry.back=b;
+    prepared_geometry.source_serial=now->serial+1;
+    prepared_geometry.output_version=psx_presentation_gpu_output_version();
+}
+int live_present(void*,int display_x,int display_y,int width,int height,int repeated,int output[4]) {
+    if(!live_enabled.load() || !repeated)return 0;
+    const auto& a=prepared_geometry.front;const auto& b=prepared_geometry.back;
+    if(!prepared_geometry.output_version || prepared_geometry.source_serial<=gpu_dropped_serial.load() || int(a.left)!=display_x || int(a.top)!=display_y ||
+        int(a.right-a.left+1)!=width || int(a.bottom-a.top+1)!=height ||
+        !psx_presentation_gpu_output_ready(prepared_geometry.output_version)) {++live_misses;return 0;}
+    ++live_frames;
+    output[0]=int(b.left);output[1]=int(b.top);output[2]=width;output[3]=height;return 1;
+}
+int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,const GeometrySamples* geometry=nullptr) {
+    GeometryDraws draws;
+    if(!build_geometry_draws(f,geometry,draws)) {std::snprintf(reply,size_t(cap),"{\"error\":\"%s\"}",draws.error);return 0;}
+    const auto& triangles=draws.triangles;const auto& materials=draws.materials;
+    const uint32_t skipped=draws.skipped,sampled_triangles=draws.sampled_triangles;
+    char skipped_ops[64]{};unsigned skipped_pos=0;
+    for(unsigned i=0;i<std::min(skipped,8u);++i)skipped_pos+=unsigned(std::snprintf(skipped_ops+skipped_pos,sizeof(skipped_ops)-skipped_pos,"%s%u",i?",":"",unsigned(draws.skipped_ops[i])));
     const GpuDrawArea& area=f.environment.area;
     // One emulation-thread command boundary: guest execution cannot advance
     // between the before/after observations. Export checks are deliberately
@@ -776,20 +998,41 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
     const bool image_same=before_pixels>0 && before_pixels==after_pixels && ow==aw && oh==ah &&
         !std::memcmp(image_before.data(),image_after.data(),size_t(before_pixels)*sizeof(uint32_t));
     const bool written=rendered && psx_presentation_gpu_write_png(path,int(area.left),int(area.top),int(area.right-area.left+1),int(area.bottom-area.top+1));
-    std::snprintf(reply,size_t(cap),"{\"rendered\":%s,\"written\":%s,\"triangles\":%u,\"skipped_commands\":%u,"
+    std::snprintf(reply,size_t(cap),"{\"rendered\":%s,\"written\":%s,\"triangles\":%u,\"skipped_commands\":%u,\"resource_only_copies\":%u,\"skipped_opcodes\":[%s],"
         "\"cpu_unchanged\":%s,\"ram_unchanged\":%s,\"vram_unchanged\":%s,\"native_image_unchanged\":%s,"
         "\"sampled_triangles\":%u,\"paired_vertices\":%u,\"derived_vertices\":%u,\"alpha\":%.6f,\"mode\":\"%s\"}",
-        rendered?"true":"false",written?"true":"false",unsigned(triangles.size()),skipped,
+        rendered?"true":"false",written?"true":"false",unsigned(triangles.size()),skipped,draws.resource_copies,skipped_ops,
         cpu_same?"true":"false",ram_same?"true":"false",vram_same?"true":"false",image_same?"true":"false",
         sampled_triangles,geometry?geometry->paired:0,geometry?geometry->derived:0,geometry?geometry->alpha:1,
         geometry?"geometry interpolation; native 4:3 prototype":"native geometry endpoint");
     return written && cpu_same && ram_same && vram_same && image_same;
 }
 int command(const char* args, char* reply, int cap) {
+    if(args && (!std::strcmp(args,"capture on") || !std::strcmp(args,"capture off"))) {
+        if(!std::strcmp(args,"capture on"))activate();else deactivate();
+        std::snprintf(reply,size_t(cap),"{\"capture\":%s}",active?"true":"false");return 1;
+    }
+    if(args && !std::strncmp(args,"gpu ",4) && std::strcmp(args,"gpu live")) {
+        if(!std::strcmp(args,"gpu off") || !std::strcmp(args,"gpu live off"))live_enabled=false;
+        // Drain before locking: a queued GPU completion may publish a frame.
+        psx_presentation_gpu_acquire();
+    }
     std::lock_guard<std::mutex> lock(published_mutex);
     const Frame* f = published.get();
+    if(args && !std::strcmp(args,"gpu live on")) {gpu_capture=true;live_enabled=true;prepare_live();std::snprintf(reply,size_t(cap),"{\"live\":true}");return 1;}
+    if(args && !std::strcmp(args,"gpu live off")) {live_enabled=false;std::snprintf(reply,size_t(cap),"{\"live\":false}");return 1;}
+    if(args && !std::strcmp(args,"gpu live")) {
+        const auto frames=live_frames.load();
+        const auto prepared=live_prepared.load();
+        std::snprintf(reply,size_t(cap),"{\"live\":%s,\"generated\":%llu,\"prepared\":%llu,\"misses\":%llu,\"mean_cpu_ms\":%.3f,\"max_cpu_ms\":%.3f,\"failure\":\"%s\","
+            "\"miss_reasons\":{\"busy\":%llu,\"pair\":%llu,\"binding\":%llu,\"scene\":%llu,\"draw\":%llu,\"gpu\":%llu}}",
+            live_enabled?"true":"false",(unsigned long long)frames,(unsigned long long)prepared,(unsigned long long)live_misses.load(),
+            prepared?double(live_cpu_ns.load())/prepared/1e6:0,double(live_max_ns.load())/1e6,live_failure.load(),
+            (unsigned long long)live_reasons[0].load(),(unsigned long long)live_reasons[1].load(),(unsigned long long)live_reasons[2].load(),
+            (unsigned long long)live_reasons[3].load(),(unsigned long long)live_reasons[4].load(),(unsigned long long)live_reasons[5].load());return 1;
+    }
     if(args && !std::strcmp(args,"gpu on")) { gpu_capture=true;std::snprintf(reply,size_t(cap),"{\"gpu_capture\":true}");return 1; }
-    if(args && !std::strcmp(args,"gpu off")) { gpu_capture=false;previous_gpu_frame->clear(0);std::snprintf(reply,size_t(cap),"{\"gpu_capture\":false}");return 1; }
+    if(args && !std::strcmp(args,"gpu off")) { live_enabled=false;gpu_capture=false;previous_gpu_frame->clear(0);std::snprintf(reply,size_t(cap),"{\"gpu_capture\":false}");return 1; }
     if(args && !std::strcmp(args,"gpu resource-test")) {
         const int ok=psx_presentation_gpu_test_versions();
         std::snprintf(reply,size_t(cap),"{\"retained_texture_test\":%s}",ok?"true":"false");return ok;
@@ -878,6 +1121,7 @@ int command(const char* args, char* reply, int cap) {
         "\"camera_compositions\":%llu,\"rigid_world_batches\":%llu,"
         "\"root_x\":%d,\"world_root_x\":%d,"
         "\"gpu_snapshot\":%s,"
+        "\"gpu_dropped\":%llu,"
         "\"lifetime_qualified\":false}",
         int(active.load()), (unsigned long long)submissions.load(),
         (unsigned long long)batches.load(), (unsigned long long)rejected.load(),
@@ -898,11 +1142,12 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)world_root_batches.load(), b ? b->root_domain : 0,
         (unsigned long long)composition_count.load(),(unsigned long long)rigid_world_batches.load(),
         b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0,
-        f && f->texture_version?"true":"false");
+        f && f->texture_version?"true":"false",(unsigned long long)gpu_dropped.load());
     return 1;
 }
 }
 PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
+    psx_presentation_gpu_set_provider(live_present,nullptr);
     psx_mod_register_activation_plugin(Plugin, activate);
     psx_mod_register_session_reset_plugin(Plugin, deactivate);
     psx_mod_register_savestate_plugin(Plugin, reset);

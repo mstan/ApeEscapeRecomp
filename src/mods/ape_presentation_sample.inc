@@ -55,21 +55,30 @@ const Batch* camera_reference(const Frame& frame) {
 bool frame_camera(const Batch& ref,PsxPresentationCamera& camera) {
     PsxPresentationPose world_to_view{};
     double lens[3],linear[9],translation[3];
-    if(!camera_lens(ref,lens))return false;
+    if(!camera_lens(ref,lens) || !(ref.presentation_valid&1))return false;
     for(unsigned i=0;i<9;++i)
         linear[i]=double(int16_t(ref.camera[i/2]>>((i&1)*16)))/4096.0/lens[i/3];
     for(unsigned i=0;i<3;++i)translation[i]=int32_t(ref.camera[5+i])/lens[i];
+    // View rows are independently normalized camera basis axes. Removing
+    // their bounded Q12 length error must precede rigid TRS conversion;
+    // treating that row error as object-style column scale creates shear.
+    for(unsigned row=0;row<3;++row) {
+        const double length=std::hypot(std::hypot(linear[row*3],linear[row*3+1]),linear[row*3+2]);
+        if(!std::isfinite(length) || std::abs(length-1)>16.0/4096.0)return false;
+        for(unsigned col=0;col<3;++col)linear[row*3+col]/=length;
+        translation[row]/=length;
+    }
     if(!psx_presentation_pose_from_matrix(&world_to_view,linear,translation,1))return false;
     const double origin[3]={0,0,0};
     if(!psx_presentation_pose_point(&world_to_view,origin,1,camera.pose.position))return false;
     camera.pose.rotation[0]=world_to_view.rotation[0];
     for(unsigned i=1;i<4;++i)camera.pose.rotation[i]=-world_to_view.rotation[i];
     for(unsigned i=0;i<3;++i)camera.pose.scale[i]=1;
-    camera.focal_x=uint16_t(ref.projection[2])*lens[0];
-    camera.focal_y=uint16_t(ref.projection[2])*lens[1];
-    camera.center_x=int32_t(ref.projection[0])/65536.0;
-    camera.center_y=int32_t(ref.projection[1])/65536.0;
-    camera.near_z=std::max(1.0,camera.focal_y*.5);
+    camera.focal_x=ref.presentation[0].focal_x*lens[0];
+    camera.focal_y=ref.presentation[0].focal_y*lens[1];
+    camera.center_x=ref.presentation[0].center_x;
+    camera.center_y=ref.presentation[0].center_y;
+    camera.near_z=ref.presentation[0].near_z;
     return camera.focal_x>0;
 }
 using VertexKey=std::tuple<uint64_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t>;
@@ -85,6 +94,7 @@ VertexMap vertex_map(const Frame& f,const Batch& ref) {
             std::memcmp(b.lens,ref.lens,sizeof b.lens) ||
             std::memcmp(b.camera,ref.camera,sizeof b.camera) || std::memcmp(b.projection,ref.projection,sizeof b.projection))continue;
         for(unsigned i=0;i<b.vertex_count;++i) {
+            if(!(b.presentation_valid&(1u<<i)))continue;
             const auto key=vertex_key(b,i);const auto found=result.find(key);
             if(found==result.end())result.emplace(key,VertexRef{&b,i,false});
             else {
@@ -201,8 +211,18 @@ bool geometry_samples(const Frame& old_frame,const Frame& new_frame,double alpha
             // receive a sample, including duplicate native material passes.
             if(id!=identities.end() && !std::memcmp(batch.camera,b->camera,sizeof batch.camera) &&
                 !std::memcmp(batch.lens,b->lens,sizeof batch.lens) &&
-                !std::memcmp(batch.projection,b->projection,sizeof batch.projection))
-                result.vertices.emplace(batch.source+i,sampled_ids.at(id->second));
+                !std::memcmp(batch.projection,b->projection,sizeof batch.projection) &&
+                (batch.presentation_valid&(1u<<i))) {
+                auto sample=sampled_ids.at(id->second);
+                const auto& projection=batch.presentation[i];
+                // Dome/depth-specific horizontal projection is an explicit
+                // original GTE operand, separate from the shared camera pose.
+                sample.view[0]*=projection.focal_x/b->presentation[0].focal_x;
+                sample.view[1]*=projection.focal_y/b->presentation[0].focal_y;
+                sample.view[0]+=(projection.center_x-b->presentation[0].center_x)*sample.view[2]/result.camera.focal_x;
+                sample.view[1]+=(projection.center_y-b->presentation[0].center_y)*sample.view[2]/result.camera.focal_y;
+                result.vertices.emplace(batch.source+i,sample);
+            }
         }
     std::unordered_map<uint64_t,const Batch*> sources;
     for(const auto& batch:new_frame.batches)sources.emplace(batch.source,&batch);

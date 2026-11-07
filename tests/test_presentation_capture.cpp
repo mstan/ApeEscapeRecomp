@@ -3,6 +3,7 @@
 #include "pgxp.h"
 #include "gpu.h"
 #include "presentation_gpu.h"
+#include "gte_presentation.h"
 #include <array>
 #include <algorithm>
 #include <cassert>
@@ -29,7 +30,18 @@ unsigned char& byte(uint32_t address) {
     return scratch[address-0x1F800000u];
 }
 bool fake_gpu=false;
+bool defer_gpu=false;
+bool fake_geometry=false,fake_perspective=false;
+struct NativeProjection {uint32_t word;int32_t x,y;uint16_t z;};
+std::map<uint32_t,NativeProjection> native_projections;
+struct DeferredGpu {PsxPresentationSnapshotReady ready;void* user;};
+std::vector<DeferredGpu> deferred_gpu;
+int fake_env_y=0;
+PsxPresentationProvider provider=nullptr;
+void* provider_user=nullptr;
 unsigned gpu_refs=0;
+uint64_t output_version=0;
+double test_focal=100,test_center=100;
 std::vector<PsxPresentationTriangle> rendered_triangles;
 std::vector<PsxPresentationMaterial> rendered_materials;
 void word(uint32_t address, uint32_t value) {
@@ -58,13 +70,21 @@ extern "C" int pgxp_tag_word_source(uint32_t address,uint32_t expected,uint64_t 
     assert(psx_mod_read_word(address)==expected);sources[address]=token;return 1;
 }
 extern "C" void pgxp_invalidate_all() {sources.clear();}
-extern "C" void gpu_get_drawing_environment(GpuDrawingEnvironment* out) {*out={};out->area.right=383;out->area.bottom=239;out->area.offset_x=5;out->area.offset_y=7;}
+extern "C" void gpu_get_drawing_environment(GpuDrawingEnvironment* out) {*out={};out->area.right=383;out->area.top=fake_env_y;out->area.bottom=fake_env_y+239;out->area.offset_x=5;out->area.offset_y=fake_env_y+7;}
+extern "C" void psx_presentation_gpu_set_provider(PsxPresentationProvider fn,void* user) {provider=fn;provider_user=user;}
 extern "C" uint64_t psx_presentation_gpu_snapshot() {if(!fake_gpu)return 0;++gpu_refs;return 101;}
+extern "C" void psx_presentation_gpu_acquire() {}
+extern "C" int psx_presentation_gpu_snapshot_async(PsxPresentationSnapshotReady ready,void* user) {
+    if(defer_gpu) {deferred_gpu.push_back({ready,user});return 1;}
+    const uint64_t version=psx_presentation_gpu_snapshot();if(!version)return 0;ready(user,version);return 1;
+}
 extern "C" int psx_presentation_gpu_retain(uint64_t id) {if(!fake_gpu || id!=101)return 0;++gpu_refs;return 1;}
 extern "C" void psx_presentation_gpu_release(uint64_t id) {assert(id==101 && gpu_refs);--gpu_refs;}
 extern "C" int psx_presentation_gpu_render(const PsxPresentationTriangle* tri,uint32_t count,const PsxPresentationMaterial* mat,uint32_t materials) {
-    rendered_triangles.assign(tri,tri+count);rendered_materials.assign(mat,mat+materials);return fake_gpu;
+    rendered_triangles.assign(tri,tri+count);rendered_materials.assign(mat,mat+materials);++output_version;return fake_gpu;
 }
+extern "C" uint64_t psx_presentation_gpu_output_version() {return output_version;}
+extern "C" int psx_presentation_gpu_output_ready(uint64_t version) {return fake_gpu && version==output_version;}
 extern "C" int psx_presentation_gpu_write_png(const char*,int,int,int,int) {return fake_gpu;}
 extern "C" int psx_presentation_gpu_test_versions() {return 0;}
 extern "C" const uint16_t* gpu_get_vram() {static uint16_t vram[1024*512]{};return vram;}
@@ -73,6 +93,26 @@ extern "C" int gl_renderer_read_display_hires(int,int,int,int,uint32_t* out,int,
     *width=*height=2;for(unsigned i=0;i<4;++i)out[i]=0x12345678;return 4;
 }
 extern "C" int gl_renderer_accurate_blending() {return 1;}
+extern "C" int gr_texture_filter() {return 0;}
+extern "C" int gpu_texture_correction_enabled() {return fake_perspective;}
+extern "C" int gte_geometry_correction_enabled() {return fake_geometry;}
+extern "C" int pgxp_load_precise_word(uint32_t address,uint32_t word,int32_t* x,int32_t* y,uint16_t* z) {
+    const auto found=native_projections.find(address);
+    if(found==native_projections.end() || found->second.word!=word)return 0;
+    if(x)*x=found->second.x;
+    if(y)*y=found->second.y;
+    if(z)*z=found->second.z;
+    return 1;
+}
+extern "C" int pgxp_get_precise_vertex(uint32_t address,uint32_t word,int32_t,int32_t,int32_t* x,int32_t* y,uint16_t* z) {
+    return pgxp_load_precise_word(address,word,x,y,z)?PGXP_SRC_DATAFLOW:PGXP_SRC_NATIVE;
+}
+extern "C" void gpu_ws_prepass_linked_list(uint32_t) {}
+extern "C" int gpu_ws_copy_presented_ui(uint32_t,const uint32_t*,uint32_t,int32_t[4],int32_t[4],unsigned,int) {return 0;}
+extern "C" void gte_presentation_capture(int) {}
+extern "C" int gte_presentation_projection(unsigned,uint32_t,uint32_t,GtePresentationProjection* p) {
+    *p={test_focal,test_focal,test_center,test_center,test_focal*.5};return 1;
+}
 // The runtime's existing GPU command decoder supplies lengths. This fixture
 // exercises polygon commands preceded by a draw-mode word in the same node.
 extern "C" int gpu_gp0_command_word_count(uint8_t op) {
@@ -80,7 +120,7 @@ extern "C" int gpu_gp0_command_word_count(uint8_t op) {
         const int n=(op&8)?4:3,stride=1+((op&16)?1:0)+((op&4)?1:0);
         return n*stride+((op&16)?0:1);
     }
-    return op==0xE1?1:0;
+    return op==0x40?3:op==0x80?4:op==0xE1?1:0;
 }
 extern "C" int psx_mod_register_instruction_plugin(const char*,uint32_t pc,uint32_t expected,PSXModFunctionEntryCallback fn) {
     assert(hooks().emplace(pc,Hook{expected,fn}).second);return 1;
@@ -293,21 +333,63 @@ int main() {
     // Verify one semi-transparent textured quad, its environment/CLUT and
     // owned command bytes, then keep it while the original RAM changes.
     fake_gpu=true;report("gpu on");
-    word(ot,0x0AFFFFFFu);word(ot+4,0xE1000200u);word(ot+8,0x2E808080u);
+    word(ot,0x0EFFFFFFu);word(ot+4,0xE1000200u);word(ot+8,0x2E808080u);
     const uint32_t xy[4]={10u|(20u<<16),30u|(20u<<16),10u|(40u<<16),30u|(40u<<16)};
     const uint32_t uv[4]={4u|(8u<<8)|(0x1C04u<<16),24u|(8u<<8)|(0x0140u<<16),4u|(28u<<8),24u|(28u<<8)};
     for(unsigned i=0;i<4;++i) {word(ot+12+i*8,xy[i]);word(ot+16+i*8,uv[i]);}
+    word(ot+44,0x80000000u);word(ot+48,608u|(128u<<16));
+    word(ot+52,624u|(128u<<16));word(ot+56,16u|(16u<<16));
     cpu.gpr[4]=ot;call(0x80028CD0,cpu);assert(gpu_refs==1);
-    assert(report("gpu render unused.png").find("\"native_image_unchanged\":true")!=std::string::npos);
+    const auto native_quad=report("gpu render unused.png");
+    assert(native_quad.find("\"native_image_unchanged\":true")!=std::string::npos);
+    assert(native_quad.find("\"resource_only_copies\":1")!=std::string::npos);
     assert(rendered_triangles.size()==2 && rendered_materials.size()==1);
     assert(rendered_triangles[0].vertices[0].x==15 && rendered_triangles[0].vertices[0].y==27);
     const auto material=rendered_materials[0];
     assert(material.texpage==0x140 && material.clut_x==64 && material.clut_y==112 && material.semi==2);
     assert(material.texture_version==101 && material.uv_limits[0]==4 && material.uv_limits[3]==28);
     assert((material.flags&(PSX_PRESENTATION_TEXTURED|PSX_PRESENTATION_DITHER))==(PSX_PRESENTATION_TEXTURED|PSX_PRESENTATION_DITHER));
-    report("gpu freeze");assert(gpu_refs==2);
+    // Native geometry and texture correction are owned with the packet,
+    // independently of whether any vertex qualifies for temporal sampling.
+    fake_geometry=fake_perspective=true;
+    for(unsigned j=0;j<4;++j) {
+        const uint32_t address=ot+12+j*8,xy=psx_mod_read_word(address);
+        native_projections[address]={xy,int32_t(int16_t(xy))*65536+16384,
+            int32_t(int16_t(xy>>16))*65536+32768,uint16_t(100*(j+1))};
+    }
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);report("gpu render unused.png");
+    assert(rendered_triangles[0].vertices[0].x==15.25 && rendered_triangles[0].vertices[0].y==27.5);
+    assert(!(rendered_triangles[0].flags&PSX_PRESENTATION_AFFINE_UV));
+    assert(std::abs(rendered_triangles[0].vertices[0].reciprocal_z-.01)<1e-9);
+    fake_geometry=fake_perspective=false;native_projections.clear();
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    report("gpu freeze");assert(gpu_refs==3); // current, adjacent, explicitly held
     word(ot+12,0);report("gpu render-held unused.png");
     assert(rendered_triangles[0].vertices[0].x==15 && rendered_triangles[0].vertices[0].y==27);
+    // An offscreen write that a later material reads cannot use the resource
+    // version captured before the write. Reject the whole private image.
+    const uint32_t copy_head=ot+128;
+    word(copy_head,0x04000000u|ot);word(copy_head+4,0x80000000u);
+    word(copy_head+8,608u|(8u<<16));word(copy_head+12,452u|(8u<<16));word(copy_head+16,16u|(16u<<16));
+    word(ot+24,(uv[1]&65535u)|(0x147u<<16));
+    // An atlas update outside this primitive's authored UV footprint is safe
+    // even when the texpage base is shared.
+    word(copy_head+12,624u|(128u<<16));
+    cpu.gpr[4]=copy_head;call(0x80028CD0,cpu);
+    assert(report("gpu render unused.png").find("\"resource_only_copies\":2")!=std::string::npos);
+    word(copy_head+12,452u|(8u<<16));
+    cpu.gpr[4]=copy_head;call(0x80028CD0,cpu);
+    char invalid_feedback[512];
+    assert(!query("gpu render unused.png",invalid_feedback,sizeof invalid_feedback));
+    assert(std::strstr(invalid_feedback,"in-frame texture feedback"));
+    // An unsupported visible primitive rejects the complete private image;
+    // it must never disappear while the supported polygons interpolate.
+    const uint32_t line=ot+96;
+    word(line,0x03000000u|ot);word(line+4,0x4000FF00u);
+    word(line+8,10u|(20u<<16));word(line+12,30u|(40u<<16));
+    cpu.gpr[4]=line;call(0x80028CD0,cpu);
+    assert(!query("gpu render unused.png",invalid_feedback,sizeof invalid_feedback));
+    assert(std::strstr(invalid_feedback,"whole-image fallback"));
     // Original camera composition includes an authored 3040/4096 Y lens.
     // Pair explicit source instances and verify world motion at the halfway
     // phase with that lens, rather than accepting it as camera rotation.
@@ -354,8 +436,10 @@ int main() {
     // than the skeleton-only call site. Keep its exact write-invalidated
     // output witness; identical matrix bytes alone cannot qualify a binding.
     restore();word(asset+4,3u<<16);word(d,asset);word(d+12,v);
+    word(0x800F447Cu,3);
     cpu.gpr[4]=d;cpu.gpr[5]=asset;call(0x80015B34,cpu);
     for(unsigned frame=0;frame<2;++frame) {
+        fake_env_y=int(frame)*256;
         uint32_t root[8]={4096,0,4096,0,4096,frame*20,0,500};
         for(unsigned i=0;i<8;++i)word(m+i*4,root[i]);
         cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=m;cpu.gpr[6]=m;
@@ -380,12 +464,63 @@ int main() {
     report("gpu pair-adjacent");
     assert(report("gpu interpolate 0.5 unused.png").find("\"paired_vertices\":3")!=std::string::npos);
     assert(rendered_triangles.size()==1 && std::abs(rendered_triangles[0].vertices[0].x-107)<1e-5);
+    report("gpu live on");int output[4]={};
+    assert(provider && !provider(provider_user,0,0,384,240,0,output));
+    const std::vector<unsigned char> guest_before(memory.begin(),memory.end());const CPUState cpu_before=cpu;
+    assert(provider(provider_user,0,0,384,240,1,output));
+    assert(output[0]==0 && output[1]==256 && output[2]==384 && output[3]==240);
+    assert(std::equal(guest_before.begin(),guest_before.end(),memory.begin()) && !std::memcmp(&cpu,&cpu_before,sizeof cpu));
+    assert(report("gpu live").find("\"generated\":1")!=std::string::npos);
+    report("gpu live off");
+    assert(!provider(provider_user,0,0,384,240,1,output));
+    // Actual camera basis that was rejected when row-normalization error
+    // was mistaken for column-scale shear during a camera turn.
+    const int16_t turned[10]={2933,0,2866,651,2887,-668,-2722,1256,2785,0};
+    uint32_t view[8]={},world[8]={4096,0,4096,0,4096,40,0,500};
+    for(unsigned i=0;i<5;++i)view[i]=uint16_t(turned[i*2]) | uint32_t(uint16_t(turned[i*2+1]))<<16;
+    for(unsigned i=0;i<8;++i){word(0x800E78C0u+i*4,view[i]);word(m+i*4,world[i]);}
+    cpu.gpr[4]=0x800E78C0u;cpu.gpr[5]=m;cpu.gpr[6]=m;call(0x8002FF50,cpu);
+    for(unsigned row=0;row<3;++row) {
+        double sum=0;for(unsigned col=0;col<3;++col)sum+=double(turned[row*3+col])*int32_t(world[5+col]);
+        view[5+row]=uint32_t(int32_t(std::floor(sum/4096)));
+    }
+    for(unsigned i=0;i<8;++i){word(m+i*4,view[i]);cpu.gte_ctrl[i]=view[i];}
+    call(0x800300A4,cpu);
+    cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4,cpu);
+    cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;call(0x80016260,cpu);call(0x8001628C,cpu);
+    for(unsigned i=0;i<3;++i)sources[ot+8+i*4]=gte_source[i];
+    fake_env_y=0;cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    report("gpu pair-adjacent");
+    assert(report("gpu interpolate 0.5 unused.png").find("\"paired_vertices\":3")!=std::string::npos);
     sources.erase(m); // native/untracked same-value write invalidates the witness
     cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4,cpu);
     cpu.gpr[3]=v;cpu.gpr[7]=0;cpu.gpr[9]=3;
     call(0x80016260,cpu);call(0x8001628C,cpu);
     cpu.gpr[4]=ot;call(0x80028CD0,cpu);
     assert(report().find("\"root_domain\":0")!=std::string::npos);
+    // Queue ownership survives later writes to the original command buffer.
+    defer_gpu=true;cpu.gpr[4]=ot;call(0x80028CD0,cpu);
+    assert(deferred_gpu.size()==1);
+    const uint32_t original_xy=psx_mod_read_word(ot+8);word(ot+8,0);
+    auto pending=deferred_gpu.back();deferred_gpu.clear();
+    pending.ready(pending.user,psx_presentation_gpu_snapshot());
+    report("gpu render unused.png");
+    assert(rendered_triangles[0].vertices[0].x==int(original_xy&2047)+5);
+    // A late completion from before restore must release its texture and
+    // never resurrect a pre-restore scene in the new epoch.
+    cpu.gpr[4]=ot;call(0x80028CD0,cpu);assert(deferred_gpu.size()==1);
+    restore();assert(!gpu_refs);
+    pending=deferred_gpu.back();deferred_gpu.clear();
+    pending.ready(pending.user,psx_presentation_gpu_snapshot());
+    assert(!gpu_refs && report().find("\"gpu_snapshot\":false")!=std::string::npos);
+    defer_gpu=false;
+    // Restore observes existing live descriptors without waiting for the game
+    // to reconstruct them. Continuity starts at this new epoch's first read.
+    cpu.gpr[4]=d;cpu.gpr[5]=m;cpu.gpr[6]=0x7000;call(0x800161C4,cpu);
+    const uint64_t restored_lifetime=sources[d];assert(restored_lifetime>>63);
+    call(0x800161C4,cpu);assert(sources[d]==restored_lifetime);
+    // A same-value untracked overwrite within the epoch must still fail closed.
+    sources.erase(d);word(d,asset);call(0x800161C4,cpu);assert(!sources[d]);
     session_reset();assert(report().find("\"active\":0")!=std::string::npos);
     assert(!gpu_refs);
     std::cout<<"Ape explicit projection capture: read-only, distinct instances, packet lineage, bounded lists, reset PASS\n";
