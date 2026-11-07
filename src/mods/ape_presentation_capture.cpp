@@ -1033,6 +1033,48 @@ int render_native_geometry(const Frame& f,const char* path,char* reply,int cap,c
         geometry?"geometry interpolation":"native geometry endpoint");
     return written && cpu_same && ram_same && vram_same && image_same;
 }
+// Diagnostic screen-space selection only. These observations never supply
+// identities or correspondence to the sampler or the live renderer.
+int probe_geometry(double alpha,double x,double y,unsigned rank,char* reply,int cap) {
+    if(!pair_gpu_old || !pair_gpu_new)return 0;
+    GeometrySamples samples;GeometryDraws draws;
+    if(!geometry_samples(*pair_gpu_old,*pair_gpu_new,alpha,samples) ||
+        !build_geometry_draws(*pair_gpu_new,&samples,draws)) {
+        std::snprintf(reply,size_t(cap),"{\"error\":\"%s\"}",samples.error?samples.error:draws.error);return 0;
+    }
+    const auto& frame=*pair_gpu_new;
+    x+=frame.environment.area.left;y+=frame.environment.area.top;
+    std::vector<std::pair<double,size_t>> edges;
+    for(size_t i=0;i<draws.triangles.size();++i) {
+        double distance=1e30;const auto& t=draws.triangles[i];
+        for(unsigned j=0;j<3;++j) {
+            const auto& a=t.vertices[j];const auto& b=t.vertices[(j+1)%3];
+            const double dx=b.x-a.x,dy=b.y-a.y,length=dx*dx+dy*dy;
+            const double u=length?std::max(0.0,std::min(1.0,((x-a.x)*dx+(y-a.y)*dy)/length)):0;
+            distance=std::min(distance,std::hypot(x-a.x-u*dx,y-a.y-u*dy));
+        }
+        if(distance<=2)edges.emplace_back(distance,i);
+    }
+    std::sort(edges.begin(),edges.end());
+    if(rank>=edges.size()) {
+        std::snprintf(reply,size_t(cap),"{\"count\":%u,\"available\":false}",unsigned(edges.size()));return 1;
+    }
+    const auto& t=draws.triangles[edges[rank].second];const Packet* packet=nullptr;
+    for(const auto& p:frame.packets)if(p.address==(t.identity&~uint64_t(3))) {packet=&p;break;}
+    const auto& m=draws.materials[t.resource];
+    const uint64_t zero[4]={};const auto* ids=packet?packet->source:zero;
+    std::snprintf(reply,size_t(cap),"{\"available\":true,\"count\":%u,\"index\":%u,\"distance\":%.8f,\"packet\":%u,\"opcode\":%u,"
+        "\"old\":%llu,\"new\":%llu,\"texpage\":%u,\"clut\":[%u,%u],\"xy\":[[%.8f,%.8f],[%.8f,%.8f],[%.8f,%.8f]],"
+        "\"uv\":[[%.3f,%.3f],[%.3f,%.3f],[%.3f,%.3f]],\"sources\":[%llu,%llu,%llu,%llu]}",
+        unsigned(edges.size()),unsigned(edges[rank].second),edges[rank].first,packet?packet->address:0,
+        packet?frame.commands[packet->first]>>24:0,(unsigned long long)pair_gpu_old->serial,(unsigned long long)frame.serial,
+        unsigned(m.texpage),unsigned(m.clut_x),unsigned(m.clut_y),
+        t.vertices[0].x-frame.environment.area.left,t.vertices[0].y-frame.environment.area.top,
+        t.vertices[1].x-frame.environment.area.left,t.vertices[1].y-frame.environment.area.top,
+        t.vertices[2].x-frame.environment.area.left,t.vertices[2].y-frame.environment.area.top,
+        t.vertices[0].uv[0],t.vertices[0].uv[1],t.vertices[1].uv[0],t.vertices[1].uv[1],t.vertices[2].uv[0],t.vertices[2].uv[1],
+        (unsigned long long)ids[0],(unsigned long long)ids[1],(unsigned long long)ids[2],(unsigned long long)ids[3]);return 1;
+}
 int command(const char* args, char* reply, int cap) {
     if(args && (!std::strcmp(args,"capture on") || !std::strcmp(args,"capture off"))) {
         if(!std::strcmp(args,"capture on"))activate();else deactivate();
@@ -1045,6 +1087,29 @@ int command(const char* args, char* reply, int cap) {
     }
     std::lock_guard<std::mutex> lock(published_mutex);
     const Frame* f = published.get();
+    if(args && !std::strncmp(args,"gpu probe ",10)) {
+        double alpha,x,y;unsigned rank;
+        if(std::sscanf(args+10,"%lf %lf %lf %u",&alpha,&x,&y,&rank)!=4 ||
+            !std::isfinite(alpha) || alpha<0 || alpha>1 || !std::isfinite(x) || !std::isfinite(y) ||
+            std::abs(x)>2048 || std::abs(y)>1024) {std::snprintf(reply,size_t(cap),"{}");return 0;}
+        return probe_geometry(alpha,x,y,rank,reply,cap);
+    }
+    if(args && !std::strncmp(args,"gpu source ",11)) {
+        char* end=nullptr;const uint64_t token=std::strtoull(args+11,&end,0);
+        if(!end || *end || !pair_gpu_new) {std::snprintf(reply,size_t(cap),"{}");return 0;}
+        for(const auto& b:pair_gpu_new->batches)if(b.source==(token&~uint64_t(3))) {
+            std::snprintf(reply,size_t(cap),"{\"source\":%llu,\"kind\":%u,\"descriptor\":%u,\"owner\":%u,\"asset\":%u,"
+                "\"lifetime\":%llu,\"vertex\":%u,\"count\":%u,\"source_vertex\":[%u,%u,%u],\"parents\":[%llu,%llu],"
+                "\"input\":[%u,%u,%u,%u,%u,%u],\"matrix\":[%u,%u,%u,%u,%u,%u,%u,%u],\"root\":[%u,%u,%u,%u,%u,%u,%u,%u]}",
+                (unsigned long long)b.source,unsigned(b.kind),b.descriptor,b.owner,b.asset,(unsigned long long)b.lifetime,
+                b.vertex,b.vertex_count,b.source_vertex[0],b.source_vertex[1],b.source_vertex[2],
+                (unsigned long long)b.parents[0],(unsigned long long)b.parents[1],
+                b.input[0],b.input[1],b.input[2],b.input[3],b.input[4],b.input[5],
+                b.matrix[0],b.matrix[1],b.matrix[2],b.matrix[3],b.matrix[4],b.matrix[5],b.matrix[6],b.matrix[7],
+                b.root[0],b.root[1],b.root[2],b.root[3],b.root[4],b.root[5],b.root[6],b.root[7]);return 1;
+        }
+        std::snprintf(reply,size_t(cap),"{}");return 0;
+    }
     if(args && !std::strcmp(args,"gpu live on")) {gpu_capture=true;live_enabled=true;prepare_live();std::snprintf(reply,size_t(cap),"{\"live\":true}");return 1;}
     if(args && !std::strcmp(args,"gpu live off")) {live_enabled=false;std::snprintf(reply,size_t(cap),"{\"live\":false}");return 1;}
     if(args && !std::strcmp(args,"gpu live")) {

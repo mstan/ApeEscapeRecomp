@@ -474,6 +474,11 @@ int main() {
     assert(output[0]==0 && output[1]==256 && output[2]==384 && output[3]==240);
     assert(std::equal(guest_before.begin(),guest_before.end(),memory.begin()) && !std::memcmp(&cpu,&cpu_before,sizeof cpu));
     assert(report("gpu live").find("\"generated\":1")!=std::string::npos);
+    const auto diagnostic=report("gpu probe 0.5 107 104 0");
+    assert(diagnostic.find("\"available\":true")!=std::string::npos);
+    const auto source_diagnostic=report(("gpu source "+std::to_string(gte_source[0])).c_str());
+    assert(source_diagnostic.find("\"descriptor\":"+std::to_string(d))!=std::string::npos);
+    assert(std::equal(guest_before.begin(),guest_before.end(),memory.begin()) && !std::memcmp(&cpu,&cpu_before,sizeof cpu));
     report("gpu live off");
     assert(!provider(provider_user,0,0,384,240,1,output));
     // Actual camera basis that was rejected when row-normalization error
