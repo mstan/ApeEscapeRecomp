@@ -52,7 +52,7 @@ Important files:
 
 ## Status
 
-**Current release — `v0.5.2`.** Ape Escape **boots from the PS1 BIOS and
+**Current release — `v0.5.6`.** Ape Escape **boots from the PS1 BIOS and
 plays** — through the intro, the title, and into gameplay, with dual-analog
 controller input including **L3/R3 stick clicks** (added in v0.0.3), a
 **controls fix** so the analog stick no longer spins the camera (v0.0.5),
@@ -129,6 +129,16 @@ exe. Clear the BIOS row to return to OpenBIOS.
 - See `CLAUDE.md` for project-specific rules.
 
 ## License
+
+For this project's code covered by the [PolyForm Noncommercial License](LICENSE),
+[PERMISSIONS.md](PERMISSIONS.md) grants standing permission for voluntary
+donations, sponsorships, and advertising revenue, including support for broader
+development initiatives. Payment must not buy access to the software, games
+built with it, or their updates, features, or game content, including early access.
+
+Matthew Stanley has authority from the relevant copyright holders to grant
+these permissions for the project's PolyForm-covered code. Third-party
+components and code explicitly licensed under other terms retain those terms.
 
 PolyForm Noncommercial 1.0.0. See `LICENSE`.
 

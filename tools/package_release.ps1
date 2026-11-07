@@ -199,6 +199,7 @@ if (Test-Path -LiteralPath $RuntimeManifestPath) {
 }
 if (Test-Path (Join-Path $Root "README.md"))         { Copy-Item (Join-Path $Root "README.md") $Stage }
 if (Test-Path (Join-Path $Root "LICENSE"))           { Copy-Item (Join-Path $Root "LICENSE") $Stage }
+if (Test-Path (Join-Path $Root "PERMISSIONS.md"))           { Copy-Item (Join-Path $Root "PERMISSIONS.md") $Stage }
 New-Item -ItemType Directory -Force (Join-Path $Stage 'docs') | Out-Null
 Copy-Item (Join-Path $Root 'docs/AOT_OVERLAYS.md') (Join-Path $Stage 'docs')
 $BundledBiosSrc = Join-Path $BuildPath "bios"
@@ -352,7 +353,7 @@ if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 $Licenses = Join-Path $Stage 'licenses'
 New-Item -ItemType Directory -Path $Licenses -Force | Out-Null
 Copy-Item -Path (Join-Path $FrameworkRoot 'runtime/licenses/*') -Destination $Licenses -Force
-foreach ($notice in @('LICENSE', 'THIRD_PARTY_ATTRIBUTION.md')) {
+foreach ($notice in @('LICENSE', 'PERMISSIONS.md', 'THIRD_PARTY_ATTRIBUTION.md')) {
     $source = Join-Path $FrameworkRoot $notice
     if (Test-Path -LiteralPath $source) {
         Copy-Item -LiteralPath $source -Destination (Join-Path $Licenses "psxrecomp-$notice") -Force
