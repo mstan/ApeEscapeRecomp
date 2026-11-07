@@ -303,6 +303,26 @@ int main() {
     word(block+88,100);word(block+92,200);
     cpu.gpr[31]=0x8001E20Cu;cpu.gpr[6]=block+64;call(0x8001DB74,cpu);
     assert(sources.count(block+88) && sources[block+88]!=sources[block+8]);
+    // The terrain caller creates the first midpoint before the recursive
+    // routine. Its source token must exist before the child's first load too.
+    const uint32_t seed=0x1F80033Cu;
+    word(seed,100);word(seed+4,200);word(seed+24,101);word(seed+28,201);
+    word(seed+8,100);word(seed+12,200);
+    sources[seed]=gte_source[0];sources[seed+24]=gte_source[1];
+    cpu.gpr[31]=0x80045BCCu;cpu.gpr[6]=seed;cpu.gpr[7]=1;cpu.gpr[14]=0x1F800000u;cpu.gpr[12]=seed;
+    call(0x8001DB74u,cpu);
+    const uint64_t seed_source=sources.at(seed+8);
+    assert(seed_source && seed_source!=sources[seed] && seed_source!=sources[seed+24]);
+    cpu.gpr[11]=seed;cpu.gpr[12]=200;call(0x8001DB74u,cpu);
+    assert(sources.at(seed+8)!=seed_source); // the other triangle half has the same parent recipe
+    const uint64_t other_seed=sources.at(seed+8);
+    cpu.gpr[11]=500;call(0x8001DB74u,cpu);
+    assert(sources.at(seed+8)==other_seed); // an ordinary quad cannot be reinterpreted as a split
+    cpu.gpr[12]=seed;
+    sources.erase(seed+8);cpu.gpr[7]=2;call(0x8001DB74u,cpu);
+    assert(!sources.count(seed+8)); // a different call shape cannot borrow this recipe
+    cpu.gpr[7]=1;sources.erase(seed+24);call(0x8001DB74u,cpu);
+    assert(!sources.count(seed+8)); // missing lineage is never reconstructed by value
     cpu.gpr[31]=0;
     for(uint32_t pc : {0x80015BA8u,0x80015C3Cu,0x80015D14u}) {
         const uint32_t descriptor=d+64;

@@ -695,23 +695,35 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     // Original recursive GT4 subdivision: s1 is the four-corner input block.
     // Bind after both output coordinate halves were written. These are native
     // projective midpoint recipes (depth guard 164), not fitted 3D positions.
-    if(pc==0x8001DB74u) {
-        // The last coordinate half is in the JAL delay slot. At recursive
-        // entry it has completed, and no child has consumed the new block yet.
-        if(cpu->gpr[6]!=cpu->gpr[17]+64)return;
-        pc=cpu->gpr[31];
-    }
     unsigned a=0,b=0,out=0,style=0;
-    switch (pc) {
-        case 0x8001DF70: a=0;b=8;out=72;style=1;break;
-        case 0x8001E0D0: a=0;b=16;out=80;style=2;break;
-        case 0x8001E20C: a=8;b=16;out=88;break;
-        case 0x8001E408: a=8;b=24;out=88;style=1;break;
-        case 0x8001E5FC: a=16;b=24;out=80;style=2;break;
-        case 0x8001E7F4: a=0;b=16;out=64;style=2;break;
-        default:return;
+    uint32_t block=cpu->gpr[17];
+    const bool terrain_seed=pc==0x8001DB74u && cpu->gpr[31]==0x80045BCCu;
+    if(terrain_seed) {
+        // 80044EF4 first splits a terrain triangle into a GT4. Its original
+        // 80045BBC/45BC0 stores produce the midpoint of input corners 0/3.
+        // The call has a fixed scratch block and depth, before any child load.
+        if(cpu->gpr[6]!=0x1F80033Cu || cpu->gpr[7]!=1 || cpu->gpr[14]!=0x1F800000u)return;
+        // Both triangle paths retain their scratch base in t3 or t4. The
+        // ordinary quad path instead holds native depth/SXY there and jumps
+        // directly to the shared call: its corner 1 is an existing vertex.
+        if(cpu->gpr[11]!=0x1F80033Cu && cpu->gpr[12]!=0x1F80033Cu)return;
+        block=cpu->gpr[6];a=0;b=24;out=8;style=1;
+    } else {
+        if(pc==0x8001DB74u) {
+            // The last half is written in the recursive JAL delay slot.
+            if(cpu->gpr[6]!=cpu->gpr[17]+64)return;
+            pc=cpu->gpr[31];
+        }
+        switch (pc) {
+            case 0x8001DF70: a=0;b=8;out=72;style=1;break;
+            case 0x8001E0D0: a=0;b=16;out=80;style=2;break;
+            case 0x8001E20C: a=8;b=16;out=88;break;
+            case 0x8001E408: a=8;b=24;out=88;style=1;break;
+            case 0x8001E5FC: a=16;b=24;out=80;style=2;break;
+            case 0x8001E7F4: a=0;b=16;out=64;style=2;break;
+            default:return;
+        }
     }
-    const uint32_t block=cpu->gpr[17];
     if (!ram(block,128,4)) { ++writing->rejected; return; }
     const uint64_t p0=pgxp_load_source(block+a,psx_mod_read_word(block+a));
     const uint64_t p1=pgxp_load_source(block+b,psx_mod_read_word(block+b));
@@ -720,6 +732,7 @@ void subdivided(CPUState* cpu, uint32_t pc) {
     const auto& s1=source_records[(p1>>2)%MaxBatches].batch;
     if(s0.source!=(p0&~uint64_t(3)) || s1.source!=(p1&~uint64_t(3)) ||
         (p0&3)>=s0.vertex_count || (p1&3)>=s1.vertex_count)return;
+    if(terrain_seed && (s0.kind!=Terrain || s1.kind!=Terrain))return;
     const uint32_t xy0=psx_mod_read_word(block+a),xy1=psx_mod_read_word(block+b);
     const uint16_t depth0=psx_mod_read_half(block+a+4),depth1=psx_mod_read_half(block+b+4);
     if(s0.native_xy[p0&3]!=xy0 || s1.native_xy[p1&3]!=xy1 ||
