@@ -1,10 +1,10 @@
 {
-  "version": "v0.5.1",
+  "version": "v0.5.2",
   "renderer_backend": "source",
   "selection": "source-build",
   "debug_tools": false,
-  "game_code_base": "8541f9488e9e9ef423f3ea9ee9fcb1f46506fdc8",
+  "game_code_base": "ec44be1c77e041dfadbe51dbdd3d16168e4a8e22",
   "framework_commit": "cbfd24fda50a557891c13b7cbf3fd46ef5ab9112",
   "external_hle_inputs": false,
-  "note": "Windows and Linux are built from the published title and framework sources. The guest cycle scale replaces the v0.5.0 Windows-only external renderer dependency for the measured slowdown fix."
+  "note": "Windows and Linux are built from the published title and framework sources. The guest cycle scale replaces the v0.5.0 Windows-only external renderer dependency for the measured slowdown fix; v0.5.2 gates it to in-level play."
 }
