@@ -55,10 +55,11 @@ void display(){activate(0);}void rate60(){activate(60);}void rate90(){activate(9
 void rate120(){activate(120);}void rate144(){activate(144);}void rate165(){activate(165);}void rate240(){activate(240);}
 }
 PSX_MOD_CONSTRUCTOR(ape_register_frame_rate_plugins){
-    const char* ids[]={"ape.frame-smoothing.display","ape.frame-smoothing.60","ape.frame-smoothing.90","ape.frame-smoothing.120",
-        "ape.frame-smoothing.144","ape.frame-smoothing.165","ape.frame-smoothing.240",
-        "ape.framerate.uncapped","ape.framerate.60","ape.framerate.120","ape.framerate.144","ape.framerate.165"};
-    void(*callbacks[])()={display,rate60,rate90,rate120,rate144,rate165,rate240,display,rate60,rate120,rate144,rate165};
+    // One declared plugin per rate. Retain the original IDs for existing
+    // rates; persisted package/feature/option selections remain unchanged.
+    const char* ids[]={"ape.framerate.uncapped","ape.framerate.60","ape.frame-smoothing.90",
+        "ape.framerate.120","ape.framerate.144","ape.framerate.165","ape.frame-smoothing.240"};
+    void(*callbacks[])()={display,rate60,rate90,rate120,rate144,rate165,rate240};
     for(unsigned i=0;i<sizeof(ids)/sizeof(ids[0]);++i){
         psx_mod_register_activation_plugin(ids[i],callbacks[i]);psx_mod_register_vblank_plugin(ids[i],tick);
         psx_mod_register_instruction_plugin(ids[i],Start,0x0C01F54C,begin);

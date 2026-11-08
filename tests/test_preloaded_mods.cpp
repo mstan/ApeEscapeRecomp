@@ -83,13 +83,13 @@ int main(int argc, char** argv) try {
              "ape.widescreen.16-9",
              "ape.widescreen.21-9",
              "ape.widescreen.adaptive",
-             "ape.frame-smoothing.60",
+             "ape.framerate.60",
              "ape.frame-smoothing.90",
-             "ape.frame-smoothing.120",
-             "ape.frame-smoothing.144",
-             "ape.frame-smoothing.165",
+             "ape.framerate.120",
+             "ape.framerate.144",
+             "ape.framerate.165",
              "ape.frame-smoothing.240",
-             "ape.frame-smoothing.display",
+             "ape.framerate.uncapped",
              "ape.fmv.skip",
              "ape.gadgets.quick-select",
              "psx.pgxp"}) {
@@ -165,13 +165,13 @@ int main(int argc, char** argv) try {
         return fail(error);
     }
     for (const auto& [choice, plugin] :
-         {std::pair{"60", "ape.frame-smoothing.60"},
+         {std::pair{"60", "ape.framerate.60"},
           std::pair{"90", "ape.frame-smoothing.90"},
-          std::pair{"120", "ape.frame-smoothing.120"},
-          std::pair{"144", "ape.frame-smoothing.144"},
-          std::pair{"165", "ape.frame-smoothing.165"},
+          std::pair{"120", "ape.framerate.120"},
+          std::pair{"144", "ape.framerate.144"},
+          std::pair{"165", "ape.framerate.165"},
           std::pair{"240", "ape.frame-smoothing.240"},
-          std::pair{"display", "ape.frame-smoothing.display"}}) {
+          std::pair{"display", "ape.framerate.uncapped"}}) {
         if (!manager.set_feature_option(
                 "ape.enhancement.frame-smoothing", "temporal-blending",
                 "rate", choice, &error)) {
@@ -184,6 +184,15 @@ int main(int argc, char** argv) try {
             return fail(std::string("wrong interpolated frame-rate plan for ") +
                         choice);
         }
+        if (!manager.save_state(&error)) return fail(error);
+        PSXRecompV4::ModPackageManager restored(root);
+        if (!restored.scan(&error) || !restored.load_state(&error)) return fail(error);
+        const auto restored_plan = restored.resolve(kGameId, "", kDiscSha256);
+        if (!restored_plan.ok || restored_plan.plugins.size() != 1 ||
+            restored_plan.plugins.front().id != plugin ||
+            restored.feature_option_value("ape.enhancement.frame-smoothing",
+                                          "temporal-blending", "rate") != choice)
+            return fail(std::string("saved presentation choice changed: ") + choice);
     }
     if (!manager.set_feature_enabled(
             "ape.enhancement.frame-smoothing", "temporal-blending", false, &error) ||
