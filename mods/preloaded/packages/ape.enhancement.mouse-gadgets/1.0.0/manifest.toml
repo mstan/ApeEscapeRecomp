@@ -1,0 +1,65 @@
+format_version = 5
+id = "ape.enhancement.mouse-gadgets"
+version = "1.0.0"
+name = "Ape Escape Mouse Gadget Controls"
+author = "pneuma-io"
+description = "Optional mouse strokes and circles for the right-stick gadgets, with native controller support."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
+
+[[feature]]
+id = "mouse-gadgets"
+name = "Mouse Gadget Controls"
+description = "Hold left mouse in focused gameplay: flick to aim, circle to rotate. Release restores normal input; Escape also releases. Left-stick and ordinary buttons stay live. Native right-stick takes over. Local analog gameplay only."
+group = "Gameplay"
+default_enabled = false
+
+[[option]]
+feature = "mouse-gadgets"
+id = "sensitivity"
+label = "Mouse sensitivity (%)"
+description = "100% needs about 48 relative mouse units for full stick travel. Adjust for your mouse DPI and SDL backend."
+type = "integer"
+default = 100
+min = 25
+max = 400
+
+[[option]]
+feature = "mouse-gadgets"
+id = "hold"
+label = "Hold direction"
+description = "Press, then move to hold a direction until release. Press alone stays neutral. A control bound to any P1 PSX input disables hold with a notice."
+type = "choice"
+default = "Mouse3"
+
+[[option.choice]]
+value = "Mouse3"
+label = "Right mouse (Mouse3)"
+[[option.choice]]
+value = "LeftAlt"
+label = "Left Alt"
+[[option.choice]]
+value = "None"
+label = "None"
+
+[[option]]
+feature = "mouse-gadgets"
+id = "invert-x"
+label = "Invert mouse X"
+type = "boolean"
+default = "false"
+
+[[option]]
+feature = "mouse-gadgets"
+id = "invert-y"
+label = "Invert mouse Y"
+type = "boolean"
+default = "false"
+
+[[plugin]]
+feature = "mouse-gadgets"
+id = "ape.gadgets.mouse"

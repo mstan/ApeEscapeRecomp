@@ -57,27 +57,27 @@ label = "Display refresh (Recommended)"
 
 [[plugin]]
 feature = "temporal-blending"
-id = "ape.frame-smoothing.60"
+id = "ape.framerate.60"
 when = { rate = "60" }
 
 [[plugin]]
 feature = "temporal-blending"
-id = "ape.frame-smoothing.120"
+id = "ape.framerate.120"
 when = { rate = "120" }
 
 [[plugin]]
 feature = "temporal-blending"
-id = "ape.frame-smoothing.144"
+id = "ape.framerate.144"
 when = { rate = "144" }
 
 [[plugin]]
 feature = "temporal-blending"
-id = "ape.frame-smoothing.165"
+id = "ape.framerate.165"
 when = { rate = "165" }
 
 [[plugin]]
 feature = "temporal-blending"
-id = "ape.frame-smoothing.display"
+id = "ape.framerate.uncapped"
 when = { rate = "display" }
 
 [[plugin]]
