@@ -26,7 +26,8 @@ include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 # (see psxrecomp-v4/SPLITGEN_MIGRATION.md). Keep the monolithic fallback for
 # older/generated source drops.
 file(GLOB GAME_GENERATED_FULL CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full_[0-9][0-9].c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.23_full_[0-9]*.c")
+list(FILTER GAME_GENERATED_FULL INCLUDE REGEX "SCUS_944[.]23_full_[0-9]+[.]c$")
 list(SORT GAME_GENERATED_FULL)
 if(NOT GAME_GENERATED_FULL)
     set(GAME_GENERATED_FULL
