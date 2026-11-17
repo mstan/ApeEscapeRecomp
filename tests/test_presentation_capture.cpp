@@ -140,6 +140,8 @@ extern "C" uint16_t psx_mod_read_half(uint32_t address) {
 extern "C" int ape_geometry_control_frame_allowed(CPUState*,uint32_t);
 extern "C" {
 uint32_t g_psx_mod_function_entry_hooks,g_psx_mod_guest_functions;
+int g_ls_mode,g_ls_replay_active,g_ram_read_watch_active,g_dma_exec_depth,g_host_store_depth,g_psx_render_pass_active;
+volatile int g_ds_recording;
 uint32_t g_psx_ram_size=0x200000u,g_psx_ram_mask=0x1fffffu;
 int (*g_psx_func_override_hook)(CPUState*,uint32_t);
 uint32_t psx_read_word(uint32_t a) {return uint32_t(byte(a))|uint32_t(byte(a+1))<<8|uint32_t(byte(a+2))<<16|uint32_t(byte(a+3))<<24;}
@@ -180,6 +182,8 @@ static void geometry_control_contract() {
     cpu.gpr[31]=0x80045bccu;assert(ape_geometry_control_frame_allowed(&cpu,0x80045bccu));
     assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));
     cpu.gpr[31]=0x8004448cu;
+    g_ram_read_watch_active=1;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));g_ram_read_watch_active=0;
+    g_ls_replay_active=1;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));g_ls_replay_active=0;
     hooks()[0x80000080u]={0,foreign_precision_observer};
     assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));hooks().erase(0x80000080u);
     const auto original=hooks().at(0x8001db74u);

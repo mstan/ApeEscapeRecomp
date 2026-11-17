@@ -15,6 +15,11 @@ stack_base = "0x801FFFF0"
 # All packet/GTE/camera/lifetime/derived-parent precision remains demanded.
 # The linked title guard refuses unknown callers/bus callbacks/observers.
 geometry_control_frames = { "0x80044EF4" = "ape_geometry_control_frame_allowed" }
+# Same guarded retail closure, with canonical bus callbacks. The exact handled
+# capture adapters preserve CPU registers and consume GTE/packet/source geometry,
+# never fractional SP/RA or scratch-address/index metadata. Unknown observers,
+# custom buses, watched/replay policies and opaque entries retain the full body.
+geometry_scratch_frames = ["0x80044EF4"]
 seeds = "seeds/ghidra_funcs.txt"
 # Pin the BIOS profile. Without this the recompiler probes one directory level
 # for any */bios/SCPH1001.toml and takes the FIRST sorted hit — which picks the

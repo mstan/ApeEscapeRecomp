@@ -1377,6 +1377,10 @@ extern "C" int ape_geometry_control_frame_allowed(CPUState* cpu,uint32_t entry) 
 #if defined(APE_GEOMETRY_CONTROL_FRAMES) && APE_GEOMETRY_CONTROL_FRAMES
     ++geometry_control_entries;
     if(!cpu || (entry!=0x80044EF4u && entry!=0x80045BCCu))return 0;
+    // These policies expose intermediate observations outside the exact
+    // adapters' CPU-register-preserving contract. Keep the canonical body.
+    if(g_ls_mode || g_ls_replay_active || g_ds_recording || g_ram_read_watch_active ||
+            g_dma_exec_depth || g_host_store_depth || g_psx_render_pass_active)return 0;
     // Only the three retail terrain callsites, or the exact recursive-call
     // continuation, own this contract. Public/foreign/opaque entries stay full.
     const uint32_t sp=cpu->gpr[29];uint32_t stack_offset=0;
