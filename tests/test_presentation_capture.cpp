@@ -2,6 +2,7 @@
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "pgxp.h"
+#include "psx_direct_memory.h"
 #include "gpu.h"
 #include "presentation_gpu.h"
 #include "gte_presentation.h"
@@ -136,8 +137,66 @@ extern "C" uint32_t psx_mod_read_word(uint32_t address) {
 extern "C" uint16_t psx_mod_read_half(uint32_t address) {
     return uint16_t(byte(address)) | uint16_t(byte(address+1))<<8;
 }
+extern "C" int ape_geometry_control_frame_allowed(CPUState*,uint32_t);
+extern "C" {
+uint32_t g_psx_mod_function_entry_hooks,g_psx_mod_guest_functions;
+uint32_t g_psx_ram_size=0x200000u,g_psx_ram_mask=0x1fffffu;
+int (*g_psx_func_override_hook)(CPUState*,uint32_t);
+uint32_t psx_read_word(uint32_t a) {return uint32_t(byte(a))|uint32_t(byte(a+1))<<8|uint32_t(byte(a+2))<<16|uint32_t(byte(a+3))<<24;}
+uint16_t psx_read_half(uint32_t a) {return uint16_t(byte(a))|uint16_t(byte(a+1))<<8;}
+uint8_t psx_read_byte(uint32_t a) {return byte(a);}
+void psx_write_word(uint32_t a,uint32_t v) {word(a,v);}
+void psx_write_half(uint32_t a,uint16_t v) {byte(a)=uint8_t(v);byte(a+1)=uint8_t(v>>8);}
+void psx_write_byte(uint32_t a,uint8_t v) {byte(a)=v;}
+}
+// Controlled existing-module providers qualify the title guard's refusal
+// wiring; they do not claim a test of BIOS/override implementation behavior.
+static bool contract_bios_quiet=true;static int contract_overrides;
+extern "C" int psx_bios_hle_dispatch_quiet(uint32_t address) {assert(address==0x8001db74u);return contract_bios_quiet;}
+extern "C" int func_override_count(void) {return contract_overrides;}
+static bool contract_code_valid=true;
+extern "C" int psx_game_text_native_ok(uint32_t a) {
+    assert(a==0x80043a8cu||a==0x80044ef4u||a==0x8001db74u);return contract_code_valid;
+}
+extern "C" int psx_mod_instruction_range_has_unhandled_hook(uint32_t begin,uint32_t end,
+        const PSXModNativeInstructionAdapter* allowed,uint32_t count) {
+    for(const auto& [pc,hook]:hooks())if((pc&0x1fffffffu)>=begin && (pc&0x1fffffffu)<end) {
+        bool handled=false;
+        for(unsigned i=0;i<count;++i)handled|=pc==allowed[i].address &&
+            hook.word==allowed[i].expected && hook.fn==allowed[i].callback;
+        if(!handled)return 1;
+    }
+    return 0;
+}
+static void foreign_precision_observer(CPUState* cpu,uint32_t) {cpu->gpr[29]^=4;}
+static int foreign_control_override(CPUState*,uint32_t) {std::abort();}
+static void geometry_control_contract() {
+    CPUState cpu{};cpu.read_word=psx_read_word;cpu.read_half=psx_read_half;cpu.read_byte=psx_read_byte;
+    cpu.write_word=psx_write_word;cpu.write_half=psx_write_half;cpu.write_byte=psx_write_byte;
+    cpu.gpr[29]=0x8001ff00u;
+    for(uint32_t ra:{0x8004448cu,0x80044730u,0x80044e60u}) {
+        cpu.gpr[31]=ra;assert(ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));
+    }
+    cpu.gpr[31]=0x80045bccu;assert(ape_geometry_control_frame_allowed(&cpu,0x80045bccu));
+    assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));
+    cpu.gpr[31]=0x8004448cu;
+    hooks()[0x80000080u]={0,foreign_precision_observer};
+    assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));hooks().erase(0x80000080u);
+    const auto original=hooks().at(0x8001db74u);
+    hooks()[0x8001db74u].fn=foreign_precision_observer;
+    assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));hooks()[0x8001db74u]=original;
+    g_psx_mod_function_entry_hooks=1;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));g_psx_mod_function_entry_hooks=0;
+    g_psx_mod_guest_functions=1;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));g_psx_mod_guest_functions=0;
+    contract_bios_quiet=false;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));contract_bios_quiet=true;
+    g_psx_func_override_hook=foreign_control_override;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));g_psx_func_override_hook=nullptr;
+    contract_overrides=1;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));contract_overrides=0;
+    cpu.write_word=nullptr;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));cpu.write_word=psx_write_word;
+    contract_code_valid=false;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));contract_code_valid=true;
+    cpu.gpr[29]=0x1f801814u;assert(!ape_geometry_control_frame_allowed(&cpu,0x80044ef4u));
+}
 int main() {
     assert(activation && restore && session_reset && query);
+    geometry_control_contract();
     assert(hooks().size()==37 && hooks().at(0x80016B44).word==0xE88C0000);
     assert(report().find("\"active\":0")!=std::string::npos);
     activation();

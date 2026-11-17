@@ -9,6 +9,12 @@ text_size = "0x000A5000"
 stack_base = "0x801FFFF0"
 
 [recompiler]
+# SCUS-94423 geometry-control-v1: this balanced frame carries only integer
+# SP/return-PC roles across the declared terrain caller/subdivision closure.
+# Callers return at 8004448C/80044730/80044E60; 8001DB74 only recurses.
+# All packet/GTE/camera/lifetime/derived-parent precision remains demanded.
+# The linked title guard refuses unknown callers/bus callbacks/observers.
+geometry_control_frames = { "0x80044EF4" = "ape_geometry_control_frame_allowed" }
 seeds = "seeds/ghidra_funcs.txt"
 # Pin the BIOS profile. Without this the recompiler probes one directory level
 # for any */bios/SCPH1001.toml and takes the FIRST sorted hit — which picks the
