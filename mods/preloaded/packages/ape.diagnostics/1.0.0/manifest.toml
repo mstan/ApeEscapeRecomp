@@ -1,0 +1,37 @@
+format_version = 5
+id = "ape.diagnostics"
+version = "1.0.0"
+name = "Diagnostics"
+author = "psxrecomp"
+description = "Record controller inputs and session diagnostics to help reproduce issues."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94423"
+
+[[feature]]
+id = "recording"
+name = "Record input diagnostics"
+description = "Save inputs and diagnostic session data in a private folder. Your saved choice is remembered for future sessions."
+group = "Diagnostics"
+default_enabled = true
+hidden = false
+quick = false
+
+[[feature]]
+id = "osd"
+name = "Show input diagnostics"
+description = "Show the optional input display during play."
+group = "Diagnostics"
+default_enabled = false
+hidden = false
+quick = false
+
+[[plugin]]
+feature = "recording"
+id = "ape.diagnostics"
+
+[[plugin]]
+feature = "osd"
+id = "ape.diagnostics.osd"

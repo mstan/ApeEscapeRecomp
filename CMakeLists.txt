@@ -89,6 +89,10 @@ psxrecomp_add_runtime_target(psx-runtime
     PRELOADED_MODS_DIR "${APE_PRELOADED_MODS}"
 )
 
+# Independent visible Mods controls; the shared recorder honors saved choices.
+include("${PSXRECOMP_ROOT}/runtime/playtest_diagnostics.cmake")
+psxrecomp_add_playtest_diagnostics(psx-runtime GAME_ID SCUS-94423 MOD_ID ape.diagnostics)
+
 if(BUILD_TESTING)
     add_executable(ape_prop_visibility_test tests/test_prop_visibility.c
         src/mods/ape_prop_visibility_plugin.c)
