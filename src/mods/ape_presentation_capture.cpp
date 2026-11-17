@@ -6,6 +6,9 @@
 #include "gpu_gl_renderer.h"
 #include "gte_presentation.h"
 #include "gpu_render.h"
+#include "psx_direct_memory.h"
+#include "bios_hle.h"
+#include "func_override.h"
 
 #include <atomic>
 #include <algorithm>
@@ -36,6 +39,7 @@ extern "C" int gte_geometry_correction_enabled(void);
  * The package is optional and default-off. Its activation starts the qualified
  * 60 FPS presenter; unsupported scenes continue through the native presenter. */
 namespace {
+std::atomic<uint64_t> geometry_control_entries{},geometry_control_accepted{};
 constexpr const char* Plugin = "ape.presentation.capture";
 constexpr size_t MaxBatches = 8192;
 constexpr size_t MaxWords = 262144, MaxNodes = 16384;
@@ -1298,6 +1302,7 @@ int command(const char* args, char* reply, int cap) {
         "\"root_x\":%d,\"world_root_x\":%d,"
         "\"gpu_snapshot\":%s,"
         "\"gpu_dropped\":%llu,"
+        "\"control_entries\":%llu,\"control_accepted\":%llu,"
         "\"lifetime_qualified\":false}",
         int(active.load()), (unsigned long long)submissions.load(),
         (unsigned long long)batches.load(), (unsigned long long)rejected.load(),
@@ -1318,51 +1323,100 @@ int command(const char* args, char* reply, int cap) {
         (unsigned long long)world_root_batches.load(), b ? b->root_domain : 0,
         (unsigned long long)composition_count.load(),(unsigned long long)rigid_world_batches.load(),
         b ? int32_t(b->root[5]) : 0, b ? int32_t(b->world_root[5]) : 0,
-        f && f->texture_version?"true":"false",(unsigned long long)gpu_dropped.load());
+        f && f->texture_version?"true":"false",(unsigned long long)gpu_dropped.load(),
+        (unsigned long long)geometry_control_entries.load(),(unsigned long long)geometry_control_accepted.load());
     return 1;
 }
+}
+// The same exact callbacks drive registration AND the geometry-only control
+// contract. No generic read-only exemption: every other active instruction hook
+// refuses the frame specialization, including an equal-PC replacement callback.
+static const PSXModNativeInstructionAdapter CaptureAdapters[] = {
+    {0x8002FF50u,0x8C880000u,camera_composition_before},
+    {0x800300A4u,0x00C01021u,camera_composition_after},
+    {0x80015AC4u,0x94A20008u,constructed},
+    {0x80015B34u,0x94A20008u,constructed},
+    {0x80015BA8u,0x94A20008u,constructed},
+    {0x80015C3Cu,0x8CA70000u,constructed},
+    {0x80015D14u,0x94A20006u,constructed},
+    {0x80028CD0u,0x00808021u,finish},
+    {0x80016A74u,0x8C900014u,enter},
+    {0x80016B44u,0xE88C0000u,projected},
+    {0x80016B8Cu,0x03E00008u,leave},
+    {0x800161C4u,0x8C83000Cu,enter_rigid},
+    {0x80016260u,0xE8CC0000u,projected_rigid},
+    {0x8001628Cu,0x03E00008u,leave},
+    {0x800160F0u,0x8C820000u,enter_rigid},
+    {0x8001618Cu,0xE8CC0000u,projected_rigid},
+    {0x800161B8u,0x03E00008u,leave},
+    {0x8001629Cu,0x8C820000u,enter_typed},
+    {0x80016394u,0x24E40018u,projected_typed},
+    {0x80016514u,0x94E20018u,projected_typed},
+    {0x80016690u,0x24E40018u,projected_typed},
+    {0x8001680Cu,0x24830018u,projected_typed},
+    {0x800168C0u,0x03E00008u,leave},
+    {0x80043E68u,0x26040001u,projected_terrain},
+    {0x80043F18u,0x26040001u,projected_terrain},
+    {0x80043FC8u,0x26240250u,projected_terrain},
+    {0x800440C4u,0x26220268u,projected_terrain},
+    {0x8004412Cu,0x26220280u,projected_terrain},
+    {0x80044820u,0x26040001u,projected_terrain},
+    {0x800448DCu,0x26040001u,projected_terrain},
+    {0x80044998u,0x26240250u,projected_terrain},
+    {0x8001DF70u,0x48994800u,subdivided},
+    {0x8001E0D0u,0x48994800u,subdivided},
+    {0x8001DB74u,0x27BDFFC0u,subdivided},
+    {0x8001EC04u,0x86220000u,subdivided},
+    {0x8001ED20u,0x86220008u,subdivided},
+    {0x8001E828u,0x27BDFFC0u,subdivided},
+
+};
+extern "C" int psx_game_text_native_ok(uint32_t);
+extern "C" int (*g_psx_func_override_hook)(CPUState*,uint32_t);
+extern "C" int ape_geometry_control_frame_allowed(CPUState* cpu,uint32_t entry) {
+#if defined(APE_GEOMETRY_CONTROL_FRAMES) && APE_GEOMETRY_CONTROL_FRAMES
+    ++geometry_control_entries;
+    if(!cpu || (entry!=0x80044EF4u && entry!=0x80045BCCu))return 0;
+    // These policies expose intermediate observations outside the exact
+    // adapters' CPU-register-preserving contract. Keep the canonical body.
+    if(g_ls_mode || g_ls_replay_active || g_ds_recording || g_ram_read_watch_active ||
+            g_dma_exec_depth || g_host_store_depth || g_psx_render_pass_active)return 0;
+    // Only the three retail terrain callsites, or the exact recursive-call
+    // continuation, own this contract. Public/foreign/opaque entries stay full.
+    const uint32_t sp=cpu->gpr[29];uint32_t stack_offset=0;
+    if((sp&3u) || sp>=0xc0000000u || (entry==0x80044EF4u && sp<24u))return 0;
+    const uint32_t frame_base=entry==0x80044EF4u?sp-24u:sp;
+    if(!psx_ram_resolve(frame_base,24u,&stack_offset))return 0;
+    const uint32_t ra=cpu->gpr[31];
+    if(entry==0x80044EF4u) {
+        if(ra!=0x8004448Cu && ra!=0x80044730u && ra!=0x80044E60u)return 0;
+    } else if(ra!=0x80045BCCu)return 0;
+    if(cpu->read_word!=psx_read_word || cpu->read_half!=psx_read_half ||
+            cpu->read_byte!=psx_read_byte || cpu->write_word!=psx_write_word ||
+            cpu->write_half!=psx_write_half || cpu->write_byte!=psx_write_byte)return 0;
+    // These are unknown precision consumers, unlike the exact source adapters
+    // below (which read integer SP/RA for identity, not their fractional shadow).
+    if(g_psx_mod_function_entry_hooks || g_psx_mod_guest_functions)return 0;
+    if(g_psx_func_override_hook || func_override_count() ||
+            !psx_bios_hle_dispatch_quiet(0x8001DB74u))return 0;
+    if(!psx_game_text_native_ok(0x80043A8Cu) ||
+            !psx_game_text_native_ok(0x80044EF4u) ||
+            !psx_game_text_native_ok(0x8001DB74u))return 0;
+    // This covers IRQ/interpreter-entered observers too; an unrecognized hook
+    // anywhere cannot acquire the weaker control-register precision contract.
+    if(psx_mod_instruction_range_has_unhandled_hook(0u,0x20000000u,
+            CaptureAdapters,sizeof(CaptureAdapters)/sizeof(CaptureAdapters[0])))return 0;
+    ++geometry_control_accepted;return 1;
+#else
+    (void)cpu;(void)entry;return 0;
+#endif
 }
 PSX_MOD_CONSTRUCTOR(ape_register_presentation_capture) {
     psx_presentation_gpu_set_provider(live_present,nullptr);
     psx_mod_register_activation_plugin(Plugin, activate_live);
     psx_mod_register_session_reset_plugin(Plugin, deactivate);
     psx_mod_register_savestate_plugin(Plugin, reset);
-    psx_mod_register_instruction_plugin(Plugin, 0x8002FF50u, 0x8C880000u, camera_composition_before);
-    psx_mod_register_instruction_plugin(Plugin, 0x800300A4u, 0x00C01021u, camera_composition_after);
-    psx_mod_register_instruction_plugin(Plugin, 0x80015AC4u, 0x94A20008u, constructed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80015B34u, 0x94A20008u, constructed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80015BA8u, 0x94A20008u, constructed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80015C3Cu, 0x8CA70000u, constructed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80015D14u, 0x94A20006u, constructed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80028CD0u, 0x00808021u, finish);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016A74u, 0x8C900014u, enter);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016B44u, 0xE88C0000u, projected);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016B8Cu, 0x03E00008u, leave);
-    psx_mod_register_instruction_plugin(Plugin, 0x800161C4u, 0x8C83000Cu, enter_rigid);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016260u, 0xE8CC0000u, projected_rigid);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001628Cu, 0x03E00008u, leave);
-    psx_mod_register_instruction_plugin(Plugin, 0x800160F0u, 0x8C820000u, enter_rigid);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001618Cu, 0xE8CC0000u, projected_rigid);
-    psx_mod_register_instruction_plugin(Plugin, 0x800161B8u, 0x03E00008u, leave);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001629Cu, 0x8C820000u, enter_typed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016394u, 0x24E40018u, projected_typed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016514u, 0x94E20018u, projected_typed);
-    psx_mod_register_instruction_plugin(Plugin, 0x80016690u, 0x24E40018u, projected_typed);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001680Cu, 0x24830018u, projected_typed);
-    psx_mod_register_instruction_plugin(Plugin, 0x800168C0u, 0x03E00008u, leave);
-    psx_mod_register_instruction_plugin(Plugin, 0x80043E68u, 0x26040001u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x80043F18u, 0x26040001u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x80043FC8u, 0x26240250u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x800440C4u, 0x26220268u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x8004412Cu, 0x26220280u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x80044820u, 0x26040001u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x800448DCu, 0x26040001u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x80044998u, 0x26240250u, projected_terrain);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001DF70u, 0x48994800u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E0D0u, 0x48994800u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001DB74u, 0x27BDFFC0u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001EC04u, 0x86220000u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001ED20u, 0x86220008u, subdivided);
-    psx_mod_register_instruction_plugin(Plugin, 0x8001E828u, 0x27BDFFC0u, subdivided);
+    for(const auto& adapter:CaptureAdapters)
+        psx_mod_register_instruction_plugin(Plugin,adapter.address,adapter.expected,adapter.callback);
     psx_mod_register_command("ape.presentation.capture", command);
 }

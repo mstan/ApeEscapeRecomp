@@ -94,6 +94,38 @@ psxrecomp_add_runtime_target(psx-runtime
 include("${PSXRECOMP_ROOT}/runtime/playtest_diagnostics.cmake")
 psxrecomp_add_playtest_diagnostics(psx-runtime GAME_ID SCUS-94423 MOD_ID ape.diagnostics)
 
+# Explicit trial, independent of the approved presentation implementation.
+# REFERENCE and an unqualified/default build keep the complete PGXP body.
+option(APE_GEOMETRY_CONTROL_FRAMES "Use certified geometry-only terrain control frames" OFF)
+set(_ape_control 0)
+get_target_property(_ape_profile psx-runtime PSX_EXECUTION_PROFILE)
+if(APE_GEOMETRY_CONTROL_FRAMES AND _ape_profile STREQUAL "ENHANCED")
+    if(NOT PSX_PGXP_DEMAND_REGIONS)
+        message(FATAL_ERROR "APE_GEOMETRY_CONTROL_FRAMES needs current PSX_PGXP_DEMAND_REGIONS sources")
+    endif()
+    set(_ape_control 1)
+endif()
+target_compile_definitions(psx-runtime PRIVATE APE_GEOMETRY_CONTROL_FRAMES=${_ape_control})
+if(TARGET psx-runtime-pgxp)
+    target_compile_definitions(psx-runtime-pgxp PRIVATE APE_GEOMETRY_CONTROL_FRAMES=${_ape_control})
+endif()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ape-control-selected.c"
+    "const unsigned ape_geometry_control_selected=${_ape_control}u;\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ape-control-reference.c"
+    "const unsigned ape_geometry_control_selected=0u;\n")
+psxrecomp_add_implementation(psx-runtime
+    NAME ape-geometry-control CONTRACT geometry-control-frame-${_ape_control}-v1
+    HLE_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/ape-control-selected.c"
+    LLE_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/ape-control-reference.c"
+    CONTRACT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/game.toml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/ape_presentation_capture.cpp"
+        "${PSXRECOMP_ROOT}/runtime/include/mod_plugins.h"
+        "${PSXRECOMP_ROOT}/runtime/src/mod_runtime.cpp"
+        "${PSXRECOMP_ROOT}/runtime/src/bios_hle.c"
+        "${PSXRECOMP_ROOT}/runtime/include/bios_hle.h"
+        "${PSXRECOMP_ROOT}/runtime/src/func_override.c"
+        "${CMAKE_CURRENT_LIST_FILE}")
+
 if(BUILD_TESTING)
     add_executable(ape_prop_visibility_test tests/test_prop_visibility.c
         src/mods/ape_prop_visibility_plugin.c)
@@ -109,6 +141,7 @@ if(BUILD_TESTING)
         "${PSXRECOMP_ROOT}/runtime/src/presentation_scene.c"
         "${PSXRECOMP_ROOT}/runtime/src/presentation_draw.c")
     target_include_directories(ape_presentation_capture_test PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
+    target_compile_definitions(ape_presentation_capture_test PRIVATE APE_GEOMETRY_CONTROL_FRAMES=1)
     if(MSVC)
         target_compile_options(ape_presentation_capture_test PRIVATE /UNDEBUG)
     else()
