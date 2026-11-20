@@ -136,7 +136,8 @@ struct PreparedGeometry {
     uint64_t source_serial=0;
     GpuDrawArea front{},back{};
 } prepared_geometry;
-void prepare_live(); // caller owns published_mutex and the GL context
+void prepare_live(); // GL owner with immutable published frames
+uint64_t prepare_display_sample(void*, double alpha);
 CPUState* observed_cpu = nullptr;
 uint64_t serial = 0;
 std::atomic<uint64_t> source_epoch{1};
@@ -179,6 +180,7 @@ void reset() {
     scope = {}; scope_event = 0; open = active.load(); serial = 0;
     ++source_epoch;
     psx_presentation_gpu_acquire();
+    psx_presentation_gpu_set_display_rate(active ? prepare_display_sample : nullptr);
     gpu_dropped_serial=0;
     observed_cpu = nullptr;
     lifetimes.clear();
@@ -1026,6 +1028,33 @@ bool build_geometry_draws(const Frame& f,const GeometrySamples* geometry,Geometr
     if(skipped) {draws.error="unsupported native command requires whole-image fallback";return false;}
     return true;
 }
+uint64_t render_live_sample(const Frame& old, const Frame& now, double alpha) {
+    const auto start=std::chrono::steady_clock::now();
+    GeometrySamples samples;GeometryDraws draws;
+    if(!geometry_samples(old,now,alpha,samples) || !samples.paired) {
+        live_failure=samples.error;++live_reasons[3];
+        if(!reported_live_scene) {
+            reported_live_scene=true;
+            std::fprintf(stderr,"Ape presentation source %llu/%llu: %s; camera old/new/lens",
+                (unsigned long long)old.serial,(unsigned long long)now.serial,samples.error);
+            for(const auto* matrix:{samples.old_camera_linear,samples.camera_linear,samples.lens_linear}) {
+                std::fputs(" [",stderr);for(unsigned i=0;i<9;++i)std::fprintf(stderr,"%s%d",i?",":"",int(matrix[i]));std::fputs("]",stderr);
+            }
+            std::fputc('\n',stderr);
+        }
+        return 0;
+    }
+    if(!build_geometry_draws(now,&samples,draws) || !draws.sampled_triangles) {
+        live_failure=draws.error;++live_reasons[4];return 0;
+    }
+    if(!psx_presentation_gpu_render(draws.triangles.data(),uint32_t(draws.triangles.size()),
+        draws.materials.data(),uint32_t(draws.materials.size()))) {live_failure="GPU render";++live_reasons[5];return 0;}
+    const auto elapsed=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now()-start).count());
+    live_cpu_ns+=elapsed;if(elapsed>live_max_ns.load())live_max_ns=elapsed;
+    ++live_prepared;live_failure="";
+    return psx_presentation_gpu_output_version();
+}
 void prepare_live() {
     prepared_geometry={};
     const Frame* old=previous_gpu_frame.get(),*now=published.get();
@@ -1039,33 +1068,18 @@ void prepare_live() {
     if((a.left==b.left && a.top==b.top) || a.right-a.left!=b.right-b.left || a.bottom-a.top!=b.bottom-b.top) {
         live_failure="display binding";++live_reasons[2];return;
     }
-    const auto start=std::chrono::steady_clock::now();
-    GeometrySamples samples;GeometryDraws draws;
-    if(!geometry_samples(*old,*now,.5,samples) || !samples.paired) {
-        live_failure=samples.error;++live_reasons[3];
-        if(!reported_live_scene) {
-            reported_live_scene=true;
-            std::fprintf(stderr,"Ape presentation source %llu/%llu: %s; camera old/new/lens",
-                (unsigned long long)old->serial,(unsigned long long)now->serial,samples.error);
-            for(const auto* matrix:{samples.old_camera_linear,samples.camera_linear,samples.lens_linear}) {
-                std::fputs(" [",stderr);for(unsigned i=0;i<9;++i)std::fprintf(stderr,"%s%d",i?",":"",int(matrix[i]));std::fputs("]",stderr);
-            }
-            std::fputc('\n',stderr);
-        }
-        return;
-    }
-    if(!build_geometry_draws(*now,&samples,draws) || !draws.sampled_triangles) {
-        live_failure=draws.error;++live_reasons[4];return;
-    }
-    if(!psx_presentation_gpu_render(draws.triangles.data(),uint32_t(draws.triangles.size()),
-        draws.materials.data(),uint32_t(draws.materials.size()))) {live_failure="GPU render";++live_reasons[5];return;}
-    const auto elapsed=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now()-start).count());
-    live_cpu_ns+=elapsed;if(elapsed>live_max_ns.load())live_max_ns=elapsed;
-    ++live_prepared;live_failure="";
+    const uint64_t version = render_live_sample(*old, *now, .5);
+    if (!version) return;
     prepared_geometry.front=a;prepared_geometry.back=b;
     prepared_geometry.source_serial=now->serial+1;
-    prepared_geometry.output_version=psx_presentation_gpu_output_version();
+    prepared_geometry.output_version=version;
+}
+uint64_t prepare_display_sample(void*, double alpha) {
+    if (!live_enabled || !prepared_geometry.output_version ||
+        prepared_geometry.source_serial <= gpu_dropped_serial.load() ||
+        !published || !previous_gpu_frame || prepared_geometry.source_serial != published->serial + 1 ||
+        published->epoch != source_epoch.load()) return 0;
+    return render_live_sample(*previous_gpu_frame, *published, alpha);
 }
 int live_present(void*,int display_x,int display_y,int width,int height,int repeated,int output[4]) {
     if(!live_enabled.load() || !repeated)return 0;
