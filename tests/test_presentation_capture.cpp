@@ -74,6 +74,7 @@ extern "C" int pgxp_tag_word_source(uint32_t address,uint32_t expected,uint64_t 
 extern "C" void pgxp_invalidate_all() {sources.clear();}
 extern "C" void gpu_get_drawing_environment(GpuDrawingEnvironment* out) {*out={};out->area.right=383;out->area.top=fake_env_y;out->area.bottom=fake_env_y+239;out->area.offset_x=5;out->area.offset_y=fake_env_y+7;}
 extern "C" void psx_presentation_gpu_set_provider(PsxPresentationProvider fn,void* user) {provider=fn;provider_user=user;}
+extern "C" void psx_presentation_gpu_set_display_rate(PsxPresentationPrepareFn) {}
 extern "C" uint64_t psx_presentation_gpu_snapshot() {if(!fake_gpu)return 0;++gpu_refs;return 101;}
 extern "C" void psx_presentation_gpu_acquire() {}
 extern "C" int psx_presentation_gpu_snapshot_async(PsxPresentationSnapshotReady ready,void* user) {
