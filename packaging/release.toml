@@ -21,6 +21,7 @@ ship = true
 [diagnostics]
 game_id = "SCUS-94423"
 package_id = "ape.diagnostics"
+allow_hd_textures = true
 
 [payload]
 start_here = "packaging/release/OPTIMIZATION_START_HERE.txt"
