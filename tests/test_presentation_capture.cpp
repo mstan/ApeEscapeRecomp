@@ -40,6 +40,7 @@ struct DeferredGpu {PsxPresentationSnapshotReady ready;void* user;};
 std::vector<DeferredGpu> deferred_gpu;
 int fake_env_y=0;
 PsxPresentationProvider provider=nullptr;
+PsxPresentationPrepareFn display_prepare=nullptr;
 void* provider_user=nullptr;
 unsigned gpu_refs=0;
 uint64_t output_version=0;
@@ -74,7 +75,7 @@ extern "C" int pgxp_tag_word_source(uint32_t address,uint32_t expected,uint64_t 
 extern "C" void pgxp_invalidate_all() {sources.clear();}
 extern "C" void gpu_get_drawing_environment(GpuDrawingEnvironment* out) {*out={};out->area.right=383;out->area.top=fake_env_y;out->area.bottom=fake_env_y+239;out->area.offset_x=5;out->area.offset_y=fake_env_y+7;}
 extern "C" void psx_presentation_gpu_set_provider(PsxPresentationProvider fn,void* user) {provider=fn;provider_user=user;}
-extern "C" void psx_presentation_gpu_set_display_rate(PsxPresentationPrepareFn) {}
+extern "C" void psx_presentation_gpu_set_display_rate(PsxPresentationPrepareFn fn) {display_prepare=fn;}
 extern "C" uint64_t psx_presentation_gpu_snapshot() {if(!fake_gpu)return 0;++gpu_refs;return 101;}
 extern "C" void psx_presentation_gpu_acquire() {}
 extern "C" int psx_presentation_gpu_snapshot_async(PsxPresentationSnapshotReady ready,void* user) {
@@ -591,9 +592,13 @@ int main() {
     assert(diagnostic.find("\"available\":true")!=std::string::npos);
     const auto source_diagnostic=report(("gpu source "+std::to_string(gte_source[0])).c_str());
     assert(source_diagnostic.find("\"descriptor\":"+std::to_string(d))!=std::string::npos);
+    const auto midpoint_version=output_version;
+    assert(display_prepare && display_prepare(nullptr,.75)>midpoint_version);
+    assert(rendered_triangles.size()==1 && rendered_triangles[0].vertices[0].x>107);
     assert(std::equal(guest_before.begin(),guest_before.end(),memory.begin()) && !std::memcmp(&cpu,&cpu_before,sizeof cpu));
     report("gpu live off");
     assert(!provider(provider_user,0,0,384,240,1,output));
+    assert(!display_prepare(nullptr,.75));
     // Actual camera basis that was rejected when row-normalization error
     // was mistaken for column-scale shear during a camera turn.
     const int16_t turned[10]={2933,0,2866,651,2887,-668,-2722,1256,2785,0};
