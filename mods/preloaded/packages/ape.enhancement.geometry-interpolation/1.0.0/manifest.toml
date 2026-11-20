@@ -14,7 +14,7 @@ disc_sha256 = "1ae17e78ebb8c782c7c1785b0a0bd7b0ee28235b8a0c83c8df887129899a852a"
 [[feature]]
 id = "geometry-interpolation"
 name = "60 FPS geometry interpolation"
-description = "Smooth supported gameplay on OpenGL. Native presentation is used when a complete geometry pair is unavailable."
+description = "Smooth supported gameplay on OpenGL or Vulkan. Native presentation is used when a complete geometry pair is unavailable."
 group = "Display"
 default_enabled = false
 
