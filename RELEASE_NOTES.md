@@ -1,5 +1,13 @@
 # Ape Escape release notes
 
+## v0.5.9
+
+- Extend optional **Mods > Geometry Interpolation > 60 FPS geometry interpolation** to Vulkan. Gameplay keeps its native timing and uses native presentation for unsupported scenes.
+- Choose OpenGL or Vulkan in **Settings > Display > Renderer**. Fresh profiles use OpenGL and Fit to screen. Existing renderer and aspect choices are preserved.
+- Include recent psxrecomp and recomp-ui fixes. CD Speed and Fast Loading remain excluded from the package.
+
+Thanks to tyscorp's OpenPete for inspiring the engine's display scheduling and Vulkan pipeline-cache work. [OpenPete](https://github.com/tyscorp/openpete) · [psxrecomp #979](https://github.com/RetroPortingToolKit/psxrecomp/pull/979)
+
 ## v0.5.7 - geometry interpolation and terrain continuity
 
 - Add optional **Geometry Interpolation > 60 FPS geometry interpolation** in Mods. OpenGL samples explicit camera, model and terrain geometry while gameplay retains its native cadence. The feature defaults off.
