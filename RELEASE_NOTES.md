@@ -1,5 +1,13 @@
 # Ape Escape release notes
 
+## v0.5.10 - startup and shared framework fixes
+
+- Remove an obsolete PGXP package reference that could prevent fresh-default startup. Picture controls remain in the shared settings.
+- Include the shared CPU load-delay, interrupt and current-build snapshot fixes.
+- Preserve default Fit to screen, independent recording choices and native memory cards. Older save states remain specific to their original build. CD Speed and Fast Loading packages remain excluded.
+
+The framework source also carries qualified host-profile agreement and coordinated network-state fixes in [psxrecomp #996](https://github.com/RetroPortingToolKit/psxrecomp/pull/996). Experimental netplay remains disabled in this public Windows package. Its separate development qualification does not establish the original online-lobby case or native Linux/cross-build netplay. Full-campaign and native-card-write coverage are not claimed.
+
 ## v0.5.9
 
 - Extend optional **Mods > Geometry Interpolation > 60 FPS geometry interpolation** to Vulkan. Gameplay keeps its native timing and uses native presentation for unsupported scenes.
