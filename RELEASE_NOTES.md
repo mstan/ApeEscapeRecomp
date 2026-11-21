@@ -1,5 +1,9 @@
 # Ape Escape release notes
 
+## v0.5.11 ? shared cross-platform packaging
+
+Windows and Linux public/playtest packages use the shared release command. The title keeps its AppImage identity and writable data folder, and the old duplicate packagers are removed. Both channels retain experimental netplay disabled, Input Recording on by default with saved Off honored, and the optional diagnostic display off. Native memory cards and player settings are preserved.
+
 ## v0.5.10 - startup and shared framework fixes
 
 - Remove an obsolete PGXP package reference that could prevent fresh-default startup. Picture controls remain in the shared settings.

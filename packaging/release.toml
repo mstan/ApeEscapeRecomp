@@ -8,7 +8,8 @@ version_file = "packaging/release/VERSION"
 player_game_toml = "game.toml"
 
 [build]
-cmake_args = ["-DPSX_RECOMP_UI=ON", "-DPSX_ENABLE_VULKAN=ON"]
+# Both release channels retain the title's qualified offline feature set.
+cmake_args = ["-DPSX_RECOMP_UI=ON", "-DPSX_ENABLE_VULKAN=ON", "-DPSX_NETPLAY=OFF"]
 
 [aot]
 mode = "cache"
@@ -26,3 +27,11 @@ allow_hd_textures = true
 [payload]
 start_here = "packaging/release/OPTIMIZATION_START_HERE.txt"
 files = ["README.md", "RELEASE_NOTES.md", {from="packaging/release/input.ini", to="input.ini"}]
+
+[linux]
+app_run = "packaging/linux/AppRun"
+desktop_file = "packaging/linux/io.github.mstan.ApeEscapeRecomp.desktop"
+icon = "recomp/launcher/boxart.tga"
+payload_dir = "apeescaperecomp"
+env_prefix = "APE_ESCAPE_RECOMP"
+prune_unreferenced_libs = true
