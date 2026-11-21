@@ -39,6 +39,8 @@ set(GAME_GENERATED_DISPATCH
 file(GLOB APE_MOD_PLUGIN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/*.cpp")
+list(REMOVE_ITEM APE_MOD_PLUGIN_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/ape_netplay_profile.c")
 
 # Ape Escape's trusted mod catalog. Saved choices override fresh defaults.
 #
@@ -94,6 +96,18 @@ psxrecomp_add_runtime_target(psx-runtime
 include("${PSXRECOMP_ROOT}/runtime/playtest_diagnostics.cmake")
 psxrecomp_add_playtest_diagnostics(psx-runtime GAME_ID SCUS-94423 MOD_ID ape.diagnostics)
 
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/netplay/portable-openbios-x64-v1.json"
+    APE_NETPLAY_QUALIFICATION_SHA256)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ape-netplay")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ape-netplay/ape_netplay_profile_contract.h"
+    CONTENT "#define APE_NETPLAY_QUALIFICATION_SHA256 \"@APE_NETPLAY_QUALIFICATION_SHA256@\"\n" @ONLY)
+target_include_directories(psx-runtime PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ape-netplay")
+psxrecomp_add_implementation(psx-runtime
+    NAME ape-host-profile CONTRACT portable-openbios-x64-v1
+    HLE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/ape_netplay_profile.c"
+    LLE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/ape_netplay_profile.c"
+    CONTRACT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/netplay/portable-openbios-x64-v1.json")
+
 # Explicit trial, independent of the approved presentation implementation.
 # REFERENCE and an unqualified/default build keep the complete PGXP body.
 option(APE_GEOMETRY_CONTROL_FRAMES "Use certified geometry-only terrain control frames" OFF)
@@ -127,6 +141,19 @@ psxrecomp_add_implementation(psx-runtime
         "${CMAKE_CURRENT_LIST_FILE}")
 
 if(BUILD_TESTING)
+    add_executable(ape_netplay_profile_test tests/test_netplay_profile.c
+        src/mods/ape_netplay_profile.c
+        "${PSXRECOMP_ROOT}/runtime/src/mod_netplay.c"
+        "${PSXRECOMP_ROOT}/runtime/src/netplay_host_profile.c"
+        "${PSXRECOMP_ROOT}/runtime/src/psx_sha256.c")
+    target_include_directories(ape_netplay_profile_test PRIVATE
+        "${PSXRECOMP_ROOT}/runtime/include" "${CMAKE_CURRENT_BINARY_DIR}/ape-netplay")
+    if(MSVC)
+        target_compile_options(ape_netplay_profile_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(ape_netplay_profile_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME ape_netplay_profile_test COMMAND ape_netplay_profile_test)
     add_executable(ape_prop_visibility_test tests/test_prop_visibility.c
         src/mods/ape_prop_visibility_plugin.c)
     target_include_directories(ape_prop_visibility_test PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
