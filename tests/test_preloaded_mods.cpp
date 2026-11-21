@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 7) return fail("expected seven package manifests");
+    if (manifest_count != 6) return fail("expected six package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
@@ -89,8 +89,7 @@ int main(int argc, char** argv) {
              "ape.fix.prop-visibility",
              "ape.presentation.capture",
              "ape.diagnostics",
-             "ape.diagnostics.osd",
-             "psx.pgxp"}) {
+             "ape.diagnostics.osd"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin))
             return fail(std::string("could not register test plugin ") + id);
     }
@@ -99,34 +98,31 @@ int main(int argc, char** argv) {
     std::string error;
     if (!manager.scan(&error)) return fail("catalog scan failed: " + error);
     if (!manager.load_state(&error)) return fail("default state failed: " + error);
-    if (manager.packages().size() != 7)
-        return fail("expected seven package families");
+    if (manager.packages().size() != 6)
+        return fail("expected six package families");
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
     if (!default_plan.ok || !default_plan.writes.empty() ||
-        default_plan.plugins.size() != 5 ||
+        default_plan.plugins.size() != 4 ||
         default_plan.plugins[0].id != "ape.diagnostics" ||
         default_plan.plugins[1].id != "ape.fmv.skip" ||
         default_plan.plugins[2].id != "ape.widescreen.adaptive" ||
-        default_plan.plugins[3].id != "ape.fix.prop-visibility" ||
-        default_plan.plugins.back().id != "psx.pgxp") {
-        return fail("default catalog did not enable recording, Skip FMVs, Fit to screen, prop visibility and PGXP");
+        default_plan.plugins[3].id != "ape.fix.prop-visibility") {
+        return fail("default catalog did not enable recording, Skip FMVs, Fit to screen and prop visibility");
     }
     if (!manager.set_feature_enabled("ape.diagnostics", "recording", false, &error))
         return fail(error);
     if (!manager.set_feature_enabled("ape.enhancement.geometry-interpolation",
             "geometry-interpolation", true, &error)) return fail(error);
     const auto geometry_plan = manager.resolve(kGameId, "", kDiscSha256);
-    if (!geometry_plan.ok || geometry_plan.plugins.size() != 5 ||
+    if (!geometry_plan.ok || geometry_plan.plugins.size() != 4 ||
         std::none_of(geometry_plan.plugins.begin(),geometry_plan.plugins.end(),
             [](const auto& plugin) {return plugin.id == "ape.presentation.capture";}))
         return fail("enabled geometry interpolation did not select the presenter");
     if (!manager.set_feature_enabled("ape.enhancement.geometry-interpolation",
             "geometry-interpolation", false, &error)) return fail(error);
     if (!manager.set_feature_enabled(
-            "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error) ||
-        !manager.set_feature_enabled(
-            "psx.enhancement.pgxp", "pgxp", false, &error)) {
+            "ape.enhancement.skip-fmvs", "skip-fmvs", false, &error)) {
         return fail(error);
     }
 
@@ -199,7 +195,7 @@ int main(int argc, char** argv) {
         return fail("prop correction must remain enabled independently of enhancements");
 
     fs::remove_all(root, ec);
-    std::cout << "Ape Escape preloaded mods: 7 packages, default recording, PGXP and prop visibility, "
+    std::cout << "Ape Escape preloaded mods: 6 packages, default recording and prop visibility, "
                  "3 widescreen choices, retired interpolation absent, "
                  "Skip FMVs migrated from Settings, "
                  "Quick Gadget Select default-off with a declarative "

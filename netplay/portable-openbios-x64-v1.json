@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "profile": "ape-openbios-x64-v1",
+  "revision": 1,
+  "game": "SCUS-94423",
+  "host": "Windows x64, same executable artifact on every peer",
+  "backend": "ENHANCED with built-in LLE OpenBIOS and sealed interpreted overlays",
+  "required_optional_cpu_features": 0,
+  "fp_contract": 2,
+  "bios": {"image_id": "OPENBIOS", "image_wordsum": "C4DAEB88"},
+  "session": {"players": 2, "occupied_mask": 3, "rollback": true, "loading": false, "observer": false},
+  "authoritative_renderer": "software 1x; software or OpenGL presentation stays local",
+  "selection": "one immutable common qualified profile before guest cycles and simulation tick 0",
+  "identity": "existing complete content identity plus actual executable SHA256 and selected profile identity",
+  "excluded": ["cross-build or native PE/ELF compatibility", "Vulkan presentation", "spectators", "extra simulation mods", "other BIOS images", "other host architectures"]
+}

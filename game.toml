@@ -119,7 +119,7 @@ internal_resolution = "4k"
 antialiasing = true
 texture_filtering = "bilinear"
 fmv_filter = "bicubic"
-# The bundled PGXP mod owns both correction toggles, including its Off state.
+# Shared picture settings own the optional precision controls.
 geometry_correction = false
 perspective_texturing = false
 pgxp_cpu_mode = true
