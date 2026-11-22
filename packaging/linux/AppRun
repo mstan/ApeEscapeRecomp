@@ -1,6 +1,6 @@
 #!/bin/sh
-# AppImage entry point. Tokens (@NAME@) are stamped by tools/package_appimage.sh
-# from packaging/release/app.conf, so this file is title-neutral.
+# AppImage entry point. The shared release command stamps identity tokens
+# from packaging/release.toml and packaging/release/VERSION.
 #
 # psxrecomp anchors settings, assets, saves, cache, and mods to argv[0]. Inside
 # an AppImage that anchor is a read-only squashfs mount, so everything writable
@@ -87,7 +87,7 @@ if [ ! -f "$data_dir/input.ini" ] && [ -f "$payload/input.ini" ]; then
     chmod u+rw "$data_dir/input.ini"
 fi
 
-# Stamped by package_appimage.sh from packaging/release/VERSION so the layout
+# Stamped by the shared release command from packaging/release/VERSION so the layout
 # marker never drifts from the artifact name.
 printf '%s\n' "@VERSION@" > "$data_dir/.appimage-layout-version"
 

@@ -45,7 +45,7 @@ Important files:
 - `mods/preloaded/`: built-in, default-off mod packages shown by the launcher.
 - `seeds/`: Ghidra-derived function starts and game-specific seed data.
 - `tools/regen.ps1`: regenerates the recompiled C output.
-- `tools/package_release.ps1`: builds the redistributable release zip.
+- `packaging/release.toml`: title identity and options for the shared release command.
 - `psxrecomp-v4/`: framework submodule commit this project is known-good against.
 - `ISSUES.md`: game-specific issue log.
 - `DISC.md`: source-disc identity and verification hashes.
@@ -119,6 +119,28 @@ Save states and rewind are exposed through launcher hotkeys; by default F7 opens
 the save-state menu and F8 rewinds.
 The disc path, optional retail BIOS choice, and options are saved next to the
 exe. Clear the BIOS row to return to OpenBIOS.
+
+## Building release packages
+
+Use the shared packager from the title repository root. The channel is required;
+each command builds Windows and Linux artifacts (Linux uses WSL on Windows):
+
+```powershell
+psxrecomp-v4/tools/package_title_release.ps1 --channel public --platform all
+psxrecomp-v4/tools/package_title_release.ps1 --channel playtest --platform all
+```
+
+On Linux, use `psxrecomp-v4/tools/package_title_release.sh` with the same channel
+and `--platform linux`. Both channels keep experimental netplay disabled.
+Input Recording is visible in Mods, starts on and remembers a saved Off choice;
+the optional diagnostic display starts off independently. The packages contain
+OpenBIOS and require your own supported disc. CD Speed and Fast Loading are
+excluded. The shared command audits each finished archive and writes a checksum
+sidecar. See the [shared release guide](psxrecomp-v4/docs/RELEASING_A_TITLE.md).
+
+The AppImage keeps writable settings, memory cards and runtime caches in
+`$XDG_DATA_HOME/ApeEscapeRecomp` (normally `~/.local/share/ApeEscapeRecomp`).
+Updating the AppImage preserves those player-owned files and saved Mods choices.
 
 ## Development Rules
 
